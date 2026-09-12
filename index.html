@@ -4586,6 +4586,109 @@ function sortMembers(a, b) {
   return (a['이름'] || '').localeCompare(b['이름'] || '', 'ko');
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   주소록 목록 차례 — 대표 이름 순, 가족은 한 덩어리로 (정식 1.16)
+
+   ★ 무엇이 달라졌나
+   예전 sortMembers 는 구역 → 소속 → 이름 순이었다. 그래서 한 집 식구가
+   소속(봉사회·청년회·교회학교…)에 따라 목록 여기저기에 흩어졌다.
+   이제는 ★가족을 한 덩어리로 묶어★ 대표 이름 가나다순으로 놓는다.
+   덩어리 안은  대표 → 부모·조부모 → 배우자·형제 → 자녀 → 손자녀  차례다
+   (buildGenMap 이 주는 「대표에게서 본 세대」가 작은 쪽부터. HEAD_SLOT 주석 참고).
+   가족이 없는 분은 자기 이름이 곧 대표 이름이라 그 자리에 홀로 들어간다.
+
+   ★ 구역은 그대로 맨 앞 기준이다 — 화면에 구역 머리글이 붙기 때문이다.
+     식구가 다른 구역에 적혀 있으면 그 구역 자리에 따로 놓인다.
+
+   ★ 무겁지 않게 (어르신 휴대폰에서 목록은 열 때마다 그리는 곳이다)
+   collectFamilies() 는 사람마다 명단 전체를 훑어 O(n²) 이다(610명이면 37만 번).
+   여기서는 한 번만 훑어 열쇠(가족번호 또는 집주소)로 모은다 — 결과는 같다.
+   집주소가 같은 사람이 아주 많은 곳(기도원·공동주택 대표주소 등)에서는
+   autoHead 가 짝을 찾느라 느려지므로, 그런 덩어리는 나이만 보고 대표를 정한다.
+═══════════════════════════════════════════════════════════════════ */
+const FAM_BIG = 10;      /* 이보다 큰 덩어리는 대표를 나이로만 고른다 */
+
+function buildFamilySortIndex(members, fam) {
+  const f = normFamily(fam);
+  const out = {};
+  const byKey = new Map();
+
+  (members || []).forEach(m => {
+    const id  = m['고유ID'];
+    const fid = f.m[id];
+    let key = '';
+    if (fid) key = 'F' + fid;
+    else {
+      const a = normAddr(m['주소']);
+      if (a.length >= 10) key = 'A' + a;
+    }
+    if (!key) return;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(m);
+  });
+
+  byKey.forEach((g, key) => {
+    if (g.length < 2) return;                    /* 혼자면 가족이 아니다 */
+    let gen = {}, info = {};
+    try { const r = buildGenMap(g, fam); gen = r.gen; info = r.info; } catch(e) {}
+
+    let head = storedHead(g, f);
+    if (!head || !info[head]) {
+      if (g.length > FAM_BIG) {
+        /* 큰 덩어리 — 가장 어른을 대표로 (autoHead 는 짝을 찾느라 무겁다) */
+        let best = null, by = 1e9;
+        g.forEach(p => {
+          const x = info[p['고유ID']];
+          const y = x ? x.y : 9999;
+          if (y < by) { by = y; best = p; }
+        });
+        head = best ? best['고유ID'] : g[0]['고유ID'];
+      } else {
+        try { head = autoHead(g, gen, info, fam); } catch(e) { head = ''; }
+      }
+    }
+    if (!head) head = g[0]['고유ID'];
+
+    const hm = g.filter(p => p['고유ID'] === head)[0] || g[0];
+    const hName = String((hm && hm['이름']) || '');
+    g.forEach(p => {
+      const id = p['고유ID'];
+      out[id] = {
+        key, head: hName,
+        rank: id === head ? 0 : 1,               /* 대표를 덩어리 맨 위로 */
+        gen:  gen[id] === undefined ? 0 : gen[id],
+        year: info[id] ? info[id].y : 9999
+      };
+    });
+  });
+  return out;
+}
+
+/* 구역 → 대표 이름 → (같은 이름이 둘이면) 가족 열쇠 → 대표 → 세대 → 나이 → 이름 */
+function famSortKey(m, idx) {
+  const gu = parseInt(m['구역'] || '0', 10) || 999;
+  const nm = String(m['이름'] || '');
+  const c  = idx && idx[m['고유ID']];
+  return c ? [gu, c.head, c.key, c.rank, c.gen, c.year, nm]
+           : [gu, nm,     '',    0,      0,     0,      nm];
+}
+
+/* 가족표가 없으면(아직 못 받았을 때) 예전 차례 그대로 */
+function sortByFamily(idx) {
+  if (!idx) return sortMembers;
+  return (a, b) => {
+    const ka = famSortKey(a, idx), kb = famSortKey(b, idx);
+    for (let i = 0; i < ka.length; i++) {
+      const x = ka[i], y = kb[i];
+      if (typeof x === 'string' || typeof y === 'string') {
+        const d = String(x).localeCompare(String(y), 'ko');
+        if (d) return d;
+      } else if (x !== y) return x - y;
+    }
+    return 0;
+  };
+}
+
 function Bdg({ t, bg, cl, icon }) {
   if (!t) return null;
   return h('span', { className:'bdg', style:{ background:bg, color:cl } },
@@ -5619,7 +5722,8 @@ function AttPicker({ value, canEdit, onPick, dark, compact }) {
    성도 목록 (이름 전용 초성 검색)
 ═══════════════════════════════════════════════════════ */
 function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle, role, fieldVis,
-                    onAdminPanel, onAttend, attStatus, listCfg, view, setView, scrollRef, onHome }) {
+                    onAdminPanel, onAttend, attStatus, listCfg, view, setView, scrollRef, onHome,
+                    family }) {
   /* 검색·필터·스크롤 위치는 App이 들고 있다.
      성도 한 명을 보고 목록으로 돌아와도 보던 자리 그대로 이어진다. */
   const search = view.search, fGu = view.fGu, fSo = view.fSo, fAtt = view.fAtt;
@@ -5664,6 +5768,11 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
     });
   }, [members]);
 
+  /* 가족 정렬표 — 명단이나 가족 설정이 바뀔 때만 다시 만든다.
+     검색·필터를 칠 때마다 다시 만들면 어르신 휴대폰에서 글자가 밀린다. */
+  const famIdx  = useMemo(() => buildFamilySortIndex(members, family), [members, family]);
+  const famSort = useMemo(() => sortByFamily(famIdx), [famIdx]);
+
   /* ⚡ [이름 전용 초성 검색 필터] */
   const filtered = useMemo(() => members.filter(m => {
     if (search) {
@@ -5692,7 +5801,7 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
     /* 출석 필터는 셋 중 하나와 정확히 맞는지만 본다 (v25) */
     if (fAtt && effAtt(m, attStatus) !== fAtt) return false;
     return true;
-  }).sort(sortMembers), [members, search, fGu, fSo, fAtt, fCat, attStatus, listCfg, seeAtt]);
+  }).sort(famSort), [members, search, fGu, fSo, fAtt, fCat, attStatus, listCfg, seeAtt, famSort]);
 
   /* 목록에서 빠진 인원 수 — 임원 이상에게만 알려 준다.
      설정을 켜 둔 것을 잊고 '왜 인원이 줄었지?' 하지 않도록. */
@@ -12311,7 +12420,7 @@ function AppReady({ wizard, setWizard }) {
   });
 
   return h(MainView, {
-    ...tp, members, photos, logoUrl, role, fieldVis, attStatus, listCfg,
+    ...tp, members, photos, logoUrl, role, fieldVis, attStatus, listCfg, family,
     view, setView, scrollRef: listScroll,
     onLogout:     logout,
     onSelect:     goDetail,
