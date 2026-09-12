@@ -265,6 +265,8 @@ a{color:inherit}
 .ghead-t{font-size:14.5px;font-weight:800;color:var(--navy);letter-spacing:-.02em}
 .ghead-c{font-size:12.5px;font-weight:600;color:var(--text-3)}
 .ghead-line{flex:1;height:1px;background:var(--border)}
+/* 한 가족이 끝나는 자리에 긋는 줄 — 위 .ghead-line 과 같은 색·두께다 */
+.fline{height:1px;background:var(--border);margin:1px 2px}
 
 /* ── 입력 ────────────────────────────────────────────── */
 input[type=text],input[type=password],input[type=search],input[type=tel],textarea{
@@ -6016,14 +6018,25 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
               ),
               h('div', { style:{ display:'flex', flexDirection:'column', gap:'8px',
                                  marginTop: seeGu ? 0 : '8px' } },
-                list.map(m => {
+                list.map((m, mi) => {
                   const jikList = seeJik ? splitRoles(m['직분']) : [];
                   const av    = getAv(m, dark);
                   const att   = effAtt(m, attStatus);
                   const badge = getBadge(att, dark);
                   const fc    = famCount[m['고유ID']] || 0;
                   const phone = seePhone ? (m['휴대폰'] || m['집전화']) : '';
-                  return h('div', {
+
+                  /* ★ 한 가족이 끝나는 자리에 가느다란 줄을 긋는다 (정식 1.16).
+                       목록이 대표 이름 순·가족 덩어리로 놓이므로(buildFamilySortIndex),
+                       바로 다음 분이 다른 가족이면 그 사이가 곧 가족의 끝이다.
+                       · 가족이 아닌(혼자인) 분 뒤에는 긋지 않는다 — 끊을 덩어리가 없다
+                       · 구역의 맨 끝에도 긋지 않는다 — 다음 구역 머리글이 이미 갈라 준다 */
+                  const myKey   = (famIdx[m['고유ID']] || {}).key || '';
+                  const next    = list[mi + 1];
+                  const nextKey = next ? ((famIdx[next['고유ID']] || {}).key || '') : '';
+                  const famEnds = !!myKey && !!next && myKey !== nextKey;
+
+                  const card = h('div', {
                     key: m['고유ID'],
                     className:'mcard',
                     style:{ '--stripe': av.bg },
@@ -6063,6 +6076,10 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                     ),
                     h(CallActions, { phone })
                   );
+
+                  return famEnds
+                    ? h(React.Fragment, { key: m['고유ID'] }, card, h('div', { className:'fline' }))
+                    : card;
                 })
               )
             )),
