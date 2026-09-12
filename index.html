@@ -35,6 +35,10 @@
   --border:#E4EAF2; --border-2:#D6DFEA;
   --text:#152230; --text-2:#54636F; --text-3:#8B98A6;
   --soft:#EAF2FA; --soft-bd:#CFE0F1;
+  /* 목록을 갈라 주는 줄 — 구역 머리글과 집(가족·단독 대표자) 사이.
+     테두리색(--border)은 너무 흐려 어르신 눈에 잘 보이지 않아
+     연한 붉은색으로 따로 둔다. 교회 상징색이 바뀌어도 이 색은 그대로다. */
+  --line:#E3A6A6;
 
   --ok:#1B6B33; --warn:#9A5B00; --bad:#A32020; --violet:#4C31A6;
   --orange-fg:#8A4B00;   /* 타지역 — 주일만(warn)과 헷갈리지 않게 조금 더 붉다 */
@@ -59,6 +63,7 @@ html[data-theme="dark"]{
   --border:#25313F; --border-2:#31404F;
   --text:#E7EDF4; --text-2:#A4B2C0; --text-3:#74828F;
   --soft:#182838; --soft-bd:#22384D;
+  --line:#8A5457;
 
   --ok:#7ACC93; --warn:#E5B569; --bad:#F09393; --violet:#B6A4F0;
   --orange-fg:#EDB578;
@@ -264,9 +269,9 @@ a{color:inherit}
 .ghead-dot{width:8px;height:8px;border-radius:50%;background:var(--navy);flex-shrink:0}
 .ghead-t{font-size:14.5px;font-weight:800;color:var(--navy);letter-spacing:-.02em}
 .ghead-c{font-size:12.5px;font-weight:600;color:var(--text-3)}
-.ghead-line{flex:1;height:1px;background:var(--border)}
-/* 한 가족이 끝나는 자리에 긋는 줄 — 위 .ghead-line 과 같은 색·두께다 */
-.fline{height:1px;background:var(--border);margin:1px 2px}
+.ghead-line{flex:1;height:1px;background:var(--line)}
+/* 한 집이 끝나는 자리에 긋는 줄 — 위 .ghead-line 과 같은 색(--line)·두께다 */
+.fline{height:1px;background:var(--line);margin:1px 2px}
 
 /* ── 입력 ────────────────────────────────────────────── */
 input[type=text],input[type=password],input[type=search],input[type=tel],textarea{
@@ -6026,15 +6031,15 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                   const fc    = famCount[m['고유ID']] || 0;
                   const phone = seePhone ? (m['휴대폰'] || m['집전화']) : '';
 
-                  /* ★ 한 가족이 끝나는 자리에 가느다란 줄을 긋는다 (정식 1.16).
+                  /* ★ 한 집이 끝나는 자리에 가느다란 줄을 긋는다 (정식 1.16).
                        목록이 대표 이름 순·가족 덩어리로 놓이므로(buildFamilySortIndex),
-                       바로 다음 분이 다른 가족이면 그 사이가 곧 가족의 끝이다.
-                       · 가족이 아닌(혼자인) 분 뒤에는 긋지 않는다 — 끊을 덩어리가 없다
-                       · 구역의 맨 끝에도 긋지 않는다 — 다음 구역 머리글이 이미 갈라 준다 */
-                  const myKey   = (famIdx[m['고유ID']] || {}).key || '';
+                       바로 다음 분이 다른 집이면 그 사이가 곧 그 집의 끝이다.
+                       · 식구가 없는 단독 대표자도 그 자체로 한 집이라 뒤에 줄을 긋는다
+                         (그래서 열쇠가 없으면 자기 고유ID 를 열쇠로 쓴다)
+                       · 구역의 맨 끝에만 긋지 않는다 — 다음 구역 머리글이 이미 갈라 준다 */
+                  const homeKey = p => (famIdx[p['고유ID']] || {}).key || ('S' + p['고유ID']);
                   const next    = list[mi + 1];
-                  const nextKey = next ? ((famIdx[next['고유ID']] || {}).key || '') : '';
-                  const famEnds = !!myKey && !!next && myKey !== nextKey;
+                  const famEnds = !!next && homeKey(m) !== homeKey(next);
 
                   const card = h('div', {
                     key: m['고유ID'],
