@@ -347,7 +347,7 @@ html[data-theme="dark"] .btn-primary{background:var(--navy);color:#0B1520}
 .seg button:disabled{cursor:default;opacity:.55}
 
 /* ── 로그인 화면 [≡] 등급 메뉴 (1.16) ────────────────
-   담당자·관리자·마스터를 우측 상단 버튼 안으로 넣었다.
+   담당자·안내실·전도인을 우측 상단 버튼 안으로 넣었다.
    성도는 이 메뉴를 열 일이 없다. */
 .act.on{background:var(--navy);color:#fff;border-color:var(--navy)}
 html[data-theme="dark"] .act.on{color:#0B1520}
@@ -497,12 +497,12 @@ html[data-theme="dark"] .chip.on{color:#0B1520}
    · 성도 약 620명 주소록. 검색(이름·초성·직분·전화·주소)·구역/소속/직분/출석 필터
    · 직분 표시 (테두리 배지 — 소속 색과 겹치지 않게)
    · 사진 (썸네일 청크 + 판번호 캐시, 원본은 상세에서 1건씩)
-   · 등급 4단계 — 성도 / 임원 / 관리자 / 마스터
+   · 등급 4단계 — 성도 / 임원 / 안내실 / 전도인
      감출 항목은 애초에 그 등급 문서에 담지 않는다 (m_member·m_leader·m_admin·m_master)
-   · 심방 메모 (visits) — 관리자 이상, 마스터가 온·오프
+   · 심방 메모 (visits) — 전도인 전용, 전도인이 온·오프
    · 출석 — 출석상태 4가지(정상·주일만·타지역·불참), 명단 묶음(구역·부서·별도),
      주일 출석표, 지정 날짜 모임, 구역·부서·별도별 참석율
-   · 가족 연결과 호칭을 마스터가 직접 (조부·조모·손자 …)
+   · 가족 연결과 호칭을 안내실이 직접 (조부·조모·손자 …)
    · 다크모드, PWA, 모바일 최적화
 
    ── 정식 1.0에서 손본 것 (v27 점검 결과 반영) ───────────
@@ -792,13 +792,13 @@ const APP_VERSION = '1.16';
    어느 판인가 — 성도판 · 임원판 · 통합판 (1.16)
 
    ★ 왜 나눴나
-   성도가 보는 주소록과, 담당자·관리자·마스터가 쓰는 관리 화면을
+   성도가 보는 주소록과, 담당자·안내실·전도인이 쓰는 관리 화면을
    ★서로 다른 주소★ 로 나눠 올리기로 했다.
 
      ccchurchdir.web.app        성도       (index 폴더)
      ccchurchdir-admin.web.app  섬기는 분  (admin 폴더)
 
-   성도 쪽 파일에는 출석표·심방 메모·마스터 관리 화면·설치 마법사가
+   성도 쪽 파일에는 출석표·심방 메모·관리 화면·설치 마법사가
    ★아예 들어 있지 않다★. 화면에서 가리는 것이 아니라 코드가 없다.
    파일이 절반 가까이 작아져 어르신 휴대폰에서 더 빨리 열리고,
    성도가 개발자 도구로 뜯어 봐도 관리 화면 자체가 나오지 않는다.
@@ -811,7 +811,7 @@ const APP_VERSION = '1.16';
 
      'all'    이 파일 그대로 — 설치판과 손으로 쓰는 통합본
      'member' 성도판   — 로그인 화면에 [≡] 가 없다
-     'admin'  임원판   — 담당자·관리자·마스터 세 칸이 한꺼번에 보인다
+     'admin'  임원판   — 담당자·안내실·전도인 세 칸이 한꺼번에 보인다
 ═══════════════════════════════════════════════════════ */
 const BUILD = 'admin'; /* BUILD_TAG — build.py 가 이 줄을 바꿔 쓴다 */
 
@@ -824,7 +824,7 @@ const SITE_ADMIN  = (CHURCH_CFG.siteAdmin  || '').trim();
    (제목을 처음 넣는 곳은 이 줄보다 위에 있어 BUILD 를 쓸 수 없다) */
 try { if (BUILD === 'admin' && IS_CONFIGURED) document.title = APP_TITLE + ' · 관리'; } catch(e) {}
 
-/* 등급 4단계 — v25에서 '임원'이 성도와 관리자 사이에 들어왔다.
+/* 등급 4단계 — v25에서 '임원'이 성도와 안내실 사이에 들어왔다.
 
    임원(구역장)은 자기 구역 성도의 주일 출석을 체크하고
    출석상태(정상·주일만·불참)를 직접 고칠 수 있다.
@@ -838,7 +838,7 @@ try { if (BUILD === 'admin' && IS_CONFIGURED) document.title = APP_TITLE + ' · 
    화면단에서 암호를 비교하는 방식이 아니므로, 개발자도구로 뜯어도
    임원용 자료(m_leader 문서)는 나오지 않는다. */
 const ROLES = { member:0, leader:1, admin:2, master:3 };
-const ROLE_LABEL = { member:'성도', leader:'임원', admin:'관리자', master:'마스터' };
+const ROLE_LABEL = { member:'성도', leader:'임원', admin:'안내실', master:'전도인' };
 
 /* 로그인 계정 — 설정의 도메인에서 만든다.
    실제 메일함이 있는 주소가 아니라 로그인 이름일 뿐이다.
@@ -893,7 +893,7 @@ const DEPT_ACCOUNTS = (function() {
        : { child:'d_child', teen:'d_teen', youth:'d_youth' };
 })();
 
-/* 이메일 → 담당 범위. 담당이 없으면(전체 임원·관리자·마스터) null */
+/* 이메일 → 담당 범위. 담당이 없으면(전체 임원·안내실·전도인) null */
 function scopeFromEmail(email) {
   const e  = String(email || '').toLowerCase().trim();
   const at = e.indexOf('@');
@@ -983,14 +983,14 @@ async function changeAccountPassword(email, currentPwd, newPwd) {
 
 /* ★ '가족세대' — 성도 화면의 호칭을 바로잡기 위한 칸 (1.11)
 
-   생년월은 기본이 「관리자 전용」이다. 그래서 성도 화면에는 나이가 없고,
+   생년월은 기본이 「안내실 전용」이다. 그래서 성도 화면에는 나이가 없고,
    소속 무리만으로 세대를 나눌 수밖에 없었다.
    그런데 무리로는 「은장회 남편 + 어머니회 아내」와
    「은장회 어머니 + 봉사회 아들」을 ★구분할 방법이 없다★.
    그래서 성도 화면에서만 부부가 모·아들로 뜨는 일이 있었다.
 
    해결 — 나이를 보내지 않고 ★세대 번호만★ 보낸다.
-   마스터는 생년월을 갖고 있으므로 저장할 때 미리 계산해 넣는다.
+   온전한 명단에는 생년월이 있으므로 저장할 때 미리 계산해 넣는다.
    숫자 한 자리이므로 나이가 드러나지 않고 통신량도 거의 늘지 않는다.
    이 칸은 상세 화면에 항목으로 나오지 않는다 (DETAIL_FIELDS 가 아니다). */
 const FAM_GEN_FIELD = '가족세대';
@@ -1009,7 +1009,7 @@ const DEFAULT_VIS = {
      성도 등급에는 여전히 내주지 않는다. */
   '출석상태':'leader','비고':'admin'
 };
-const VIS_LABEL = { all:'성도 공개', leader:'임원까지', admin:'관리자 전용', master:'마스터만' };
+const VIS_LABEL = { all:'성도 공개', leader:'임원까지', admin:'안내실 전용', master:'전도인만' };
 const VIS_RANK  = { all:0, leader:1, admin:2, master:3 };
 const VIS_STEPS = ['all','leader','admin','master'];
 
@@ -1021,12 +1021,12 @@ function canSee(field, role, vis) {
 /* ═══════════════════════════════════════════════════════
    심방 메모 설정
 
-   enabled : 기능을 쓸지 말지 (마스터가 관리 화면에서 켜고 끔)
-   level   : 열람·기록이 가능한 최소 등급 ('admin' | 'master')
+   enabled : 기능을 쓸지 말지 (전도인이 관리 화면에서 켜고 끔)
+   level   : 옛 설정값이다 — 지금은 쓰지 않는다 (심방은 전도인 전용)
 
-   성도('member')는 어떤 설정에서도 심방 메모를 볼 수 없다.
+   성도·담당자·안내실은 어떤 설정에서도 심방 메모를 볼 수 없다.
    화면에서 가리는 것이 아니라 애초에 별도 컬렉션(visits)에 있고
-   보안 규칙이 관리자·마스터에게만 열려 있기 때문이다.
+   보안 규칙이 전도인에게만 열려 있기 때문이다.
 ═══════════════════════════════════════════════════════ */
 const DEFAULT_VISIT_CFG = { enabled:true, level:'admin' };
 
@@ -1045,12 +1045,12 @@ function normVisitCfg(v) {
    hideAway   : 타지역을 주소록 목록에서 감춘다
    hideAbsent : 불참을 주소록 목록에서 감춘다
    statusEdit : 담당자가 출석상태를 고칠 수 있나 (출석 체크와 별개)
-   hidden     : 지금 감출 성도의 고유ID 목록 — 마스터가 저장할 때 만든다
+   hidden     : 지금 감출 성도의 고유ID 목록 — 안내실이 저장할 때 만든다
 
    ★ 왜 hidden 목록을 따로 실어 두는가
-     성도 화면에는 출석상태가 아예 오지 않는다 (관리자 전용 항목).
+     성도 화면에는 출석상태가 아예 오지 않는다 (안내실 전용 항목).
      그래서 성도 기기는 누가 타지역인지 스스로 알 수 없다.
-     마스터가 저장할 때 골라 둔 고유ID 목록을 함께 보내야 성도 화면에서도
+     안내실이 저장할 때 골라 둔 고유ID 목록을 함께 보내야 성도 화면에서도
      그분들이 빠진다. 임원 이상은 출석상태를 갖고 있으므로 방금 바꾼
      상태가 곧바로 반영된다 (아래 listShows 의 live 참고).
 
@@ -1083,9 +1083,11 @@ function listShows(m, attStatus, cfg, live) {
   return c.hidden.indexOf(String(m['고유ID'])) < 0;
 }
 
-/* 담당자가 출석상태를 고칠 수 있나 — 마스터는 설정과 무관하게 늘 가능하다 */
+/* 담당자가 출석상태를 고칠 수 있나 — 전도인은 설정과 무관하게 늘 가능하다 */
 function canEditAttCfg(role, cfg) {
   if (role === 'master') return true;
+  /* 출석은 전도인과 담당자의 몫이다. 안내실은 손대지 않는다 (등급 개편) */
+  if (role === 'admin') return false;
   return normListCfg(cfg).statusEdit;
 }
 
@@ -1093,8 +1095,9 @@ function canEditAttCfg(role, cfg) {
 function canVisit(role, cfg) {
   const c = normVisitCfg(cfg);
   if (!c.enabled) return false;
-  if (ROLES[role || 'member'] < ROLES.admin) return false;   /* 성도는 무조건 차단 */
-  return ROLES[role || 'member'] >= ROLES[c.level];
+  /* 심방은 전도인 전용이다 (등급 개편).
+     성도·담당자·안내실 화면에는 심방 메모 칸이 아예 나오지 않는다. */
+  return role === 'master';
 }
 
 /* ⚡ [초성 추출 유틸리티 함수] */
@@ -1594,7 +1597,7 @@ function fsErrMsg(e) {
 const MEMBER_DOC = { member:'m_member', leader:'m_leader', admin:'m_admin', master:'m_master' };
 
 /* ═══════════════════════════════════════════════════════
-   가족 연결 (v27 추가) — 마스터가 직접 묶고 호칭을 적는다
+   가족 연결 (v27 추가) — 안내실이 직접 묶고 호칭을 적는다
 
    왜 필요한가
    ──────────
@@ -1607,13 +1610,13 @@ const MEMBER_DOC = { member:'m_member', leader:'m_leader', admin:'m_admin', mast
       나이도 촌수도 모르니 세대만 보고 짐작한 것이다.
       실제로는 '조모'라고 적혀야 한다.
 
-   그래서 마스터가 직접 가족을 묶고, 사람마다 호칭을 적을 수 있게 했다.
+   그래서 안내실이 직접 가족을 묶고, 사람마다 호칭을 적을 수 있게 했다.
 
    어디에 저장하나 — church/config 안에
    ──────────────────────────────────
    따로 컬렉션을 만들지 않았다. config 문서는 접속할 때마다 어차피
    한 번 읽으므로, 그 안에 담으면 ★ 읽기 횟수가 하나도 늘지 않는다.
-   쓰기는 이미 마스터만 되도록 보안 규칙이 막고 있어 규칙도 고칠 필요가 없다.
+   쓰기는 안내실만 되도록 보안 규칙이 막고 있다.
 
    church/config.family = JSON 문자열
    {
@@ -1625,7 +1628,7 @@ const MEMBER_DOC = { member:'m_member', leader:'m_leader', admin:'m_admin', mast
    ★ 호칭은 '보는 사람 기준'이 아니라 '그 사람의 자리'다.
      조모라고 적어 두면 누가 보아도 '조모'로 나온다.
      보는 사람마다 다르게 계산하려면 촌수를 다 알아야 하는데,
-     그것을 마스터가 일일이 입력하실 수는 없다.
+     그것을 안내실이 일일이 입력하실 수는 없다.
      할머니 화면에서 청년이 '손자'로 나오게 하려면
      청년에게 '손자'라고 적어 두면 된다. 한 사람에 한 번만 적는다.
 ═══════════════════════════════════════════════════════ */
@@ -1646,7 +1649,7 @@ function newFamilyId() {
   return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 }
 
-/* 마스터가 고를 수 있는 호칭. 여기에 없으면 직접 적을 수 있다. */
+/* 안내실이 고를 수 있는 호칭. 여기에 없으면 직접 적을 수 있다. */
 const REL_PRESETS = [
   '남편','아내','부','모','조부','조모','증조부','증조모',
   '아들','딸','손자','손녀','형','누나','오빠','언니',
@@ -1761,7 +1764,7 @@ async function fetchAndCacheFromServer(role) {
   let vis = {};
   try { vis = cdData.fieldVis ? JSON.parse(cdData.fieldVis) : {}; } catch(e) { vis = {}; }
   const finalVis = { ...DEFAULT_VIS, ...vis };
-  const hasLegacyLogo = !!cdData.logoUrl;   /* 마스터에게 '따로 저장하기'를 권하기 위한 표시 */
+  const hasLegacyLogo = !!cdData.logoUrl;   /* 안내실에게 '따로 저장하기'를 권하기 위한 표시 */
 
   /* 심방 메모 사용 여부·권한. 설정이 아직 없으면 기본값을 쓴다. */
   let visitCfg = { ...DEFAULT_VISIT_CFG };
@@ -1796,7 +1799,7 @@ async function fetchAndCacheFromServer(role) {
   /* 임원용 문서(m_leader)는 v25에서 새로 생긴 것이다.
      새 파일을 올렸지만 아직 엑셀을 다시 업로드하지 않았다면 이 문서가 없다.
      그때 빈 화면을 보여 드리는 것보다 성도용 명단이라도 띄우는 편이 낫다.
-     (출석상태가 빠진 명단이므로 마스터가 엑셀을 다시 올리면 온전해진다) */
+     (출석상태가 빠진 명단이므로 안내실이 엑셀을 다시 올리면 온전해진다) */
   if (!members.length && role === 'leader') {
     try {
       const fb = await getServerDoc(_db.collection('church').doc('m_member'), '성도 명단 불러오기', FS_T_MEMBERS);
@@ -1844,7 +1847,7 @@ async function syncInBackground(role) {
     const cdData = cd.data();
 
     /* ★ 주소록 설정은 명단과 무관하게 접속마다 새로 받는다.
-       마스터가 공지를 바꿔도 성도가 명단 234KB 를 다시 받을 필요는 없다.
+       안내실이 공지를 바꿔도 성도가 명단 234KB 를 다시 받을 필요는 없다.
        (fbSaveListCfg 가 updatedAt 을 올리지 않는 이유) */
     try {
       const lc = normListCfg(cdData.listCfg
@@ -1866,8 +1869,8 @@ async function syncInBackground(role) {
 }
 
 /* 명단 전체에 대해 집안별 세대 번호를 계산한다.
-   ★ 마스터만 생년월을 갖고 있으므로 ★저장할 때★ 계산해 넣어야 한다.
-     그러면 성도가 보는 호칭이 관리자가 보는 것과 같아진다. */
+   ★ 온전한 명단에만 생년월이 있으므로 ★저장할 때★ 계산해 넣어야 한다.
+     그러면 성도가 보는 호칭이 안내실이 보는 것과 같아진다. */
 function computeFamilyGen(members, famCfg) {
   const out = {}, seen = {};
   (members || []).forEach(me => {
@@ -1907,6 +1910,15 @@ function withFamilyGen(members, famCfg) {
   });
 }
 
+/* 온전한 명단(church/m_master)을 한 번 읽는다 — 관리 화면 전용.
+   안내실이 표시 설정을 저장하거나 백업을 받을 때만 쓴다 (등급 개편). */
+async function fbLoadMasterMembers() {
+  const d = await getServerDoc(_db.collection('church').doc('m_master'),
+                               '온전한 명단 불러오기', FS_T_MEMBERS);
+  if (!d.exists) return [];
+  try { return JSON.parse(d.data().members || '[]'); } catch(e) { return []; }
+}
+
 async function fbSaveMembers(rawMembers, fieldVis, famCfg) {
   const vis = { ...DEFAULT_VIS, ...(fieldVis || {}) };
   /* 저장 직전에 세대 번호를 붙인다 (위 withFamilyGen 주석 참고) */
@@ -1920,9 +1932,9 @@ async function fbSaveMembers(rawMembers, fieldVis, famCfg) {
      config 를 마지막에 올리면 그런 어긋남이 생기지 않는다. */
   await Promise.all([
     withTimeout(col.doc('m_master').set({ members: JSON.stringify(members), count: members.length }),
-                60000, '명단 저장(마스터용)'),
+                60000, '명단 저장(온전한 명단)'),
     withTimeout(col.doc('m_admin' ).set({ members: JSON.stringify(projectMembers(members, vis, 'admin' )) }),
-                60000, '명단 저장(관리자용)'),
+                60000, '명단 저장(안내실용)'),
     withTimeout(col.doc('m_leader').set({ members: JSON.stringify(projectMembers(members, vis, 'leader')) }),
                 60000, '명단 저장(임원용)'),
     withTimeout(col.doc('m_member').set({ members: JSON.stringify(projectMembers(members, vis, 'member')) }),
@@ -1947,7 +1959,7 @@ async function fbSaveFieldVis(vis, masterMembers) {
   if (masterMembers && masterMembers.length) {
     await Promise.all([
       withTimeout(col.doc('m_admin' ).set({ members: JSON.stringify(projectMembers(masterMembers, vis, 'admin' )) }),
-                  60000, '명단 저장(관리자용)'),
+                  60000, '명단 저장(안내실용)'),
       withTimeout(col.doc('m_leader').set({ members: JSON.stringify(projectMembers(masterMembers, vis, 'leader')) }),
                   60000, '명단 저장(임원용)'),
       withTimeout(col.doc('m_member').set({ members: JSON.stringify(projectMembers(masterMembers, vis, 'member')) }),
@@ -1986,7 +1998,7 @@ async function fbSaveFieldVis(vis, masterMembers) {
 
    ★ 옛 자료 호환
    예전에 config.logoUrl 에 들어 있던 로고도 그대로 읽는다.
-   마스터가 관리 화면에서 [로고 따로 저장하기] 를 한 번 누르시면
+   안내실이 관리 화면에서 [로고 따로 저장하기] 를 한 번 누르시면
    새 방식으로 옮겨지고 config 에서 지워진다.
 
    ★ 보안 규칙에 church/logo 읽기 권한이 필요하다.
@@ -2082,7 +2094,7 @@ async function fbDeleteLogo() {
 
    읽기 횟수
    ─────────
-   상세 화면을 열 때 관리자·마스터에게만 1회. 성도는 아예 읽지 않는다.
+   상세 화면을 열 때 전도인에게만 1회. 다른 등급은 아예 읽지 않는다.
 ═══════════════════════════════════════════════════════ */
 const VISIT_TIMEOUT = 15000;
 
@@ -2204,7 +2216,7 @@ async function fbDeleteVisitEntry(member, entryId) {
   return await fbCommitVisitTx(member, list => list.filter(e => e.id !== entryId));
 }
 
-/* 전체 메모 — 마스터의 백업·점검용.
+/* 전체 메모 — 전도인의 백업·점검용.
    성도 610명이 아니라 메모가 실제로 있는 문서 수만큼만 읽는다. */
 async function fbLoadAllVisits() {
   const qs = await withTimeout(_db.collection('visits').get(), 30000, '심방 메모 전체 읽기');
@@ -2367,7 +2379,7 @@ async function fbSetAttStatusBulk(map) {
 
    순서대로 따집니다
    ────────────────
-   ① 마스터가 직접 지정한 명단이 있으면 그곳       (attend/groups.member)
+   ① 전도인이 직접 지정한 명단이 있으면 그곳       (attend/groups.member)
    ② 소속이 교회학교·영유아면 그 부서              (DEPT_DEFS)
    ③ 그 밖에는 자기 구역                          (gu_3 …)
    ④ 구역도 소속도 없으면 '미지정'
@@ -2378,7 +2390,7 @@ async function fbSetAttStatusBulk(map) {
    저장 형태
    ────────
    attend/groups {
-     list:   { c1a2b3: { name:'영유아부', order:1 } },   마스터가 만든 별도 명단
+     list:   { c1a2b3: { name:'영유아부', order:1 } },   전도인이 만든 별도 명단
      member: { 고유ID: 'c1a2b3' }                        이 성도의 담당 명단
    }
 ═══════════════════════════════════════════════════════ */
@@ -2404,7 +2416,7 @@ async function fbSetAttStatusBulk(map) {
    교회학교(유초등부·중고등부)와 영유아 아기는 구역 통계에 넣지 않습니다.
    구역은 장년 조직이라 아이들까지 넣으면 구역 참석율의 뜻이 흐려집니다.
 
-   ★ 마스터가 관리 화면 [출석] 탭에서 부서·별도 명단마다 바꿀 수 있습니다.
+   ★ 전도인이 관리 화면 [출석] 탭에서 부서·별도 명단마다 바꿀 수 있습니다.
      (영유아부에 담은 어머니들을 구역 통계에 넣고 싶으실 때 쓰십니다)
      바꾼 값은 attend/groups.opt 에 저장됩니다. */
 /* 교회마다 부서 이름과 「소속」 칸 표기가 다르므로 설정에서 가져온다.
@@ -2431,7 +2443,7 @@ function normGroups(v) {
 function groupInGu(gid, groups) {
   const g = normGroups(groups);
   const o = g.opt[gid];
-  if (o && o.inGu !== undefined) return !!o.inGu;      /* 마스터가 정한 값이 우선 */
+  if (o && o.inGu !== undefined) return !!o.inGu;      /* 전도인이 정한 값이 우선 */
   if (DEPT_BY_ID[gid]) return !!DEPT_BY_ID[gid].inGu;  /* 부서 기본값 */
   return false;                                        /* 별도 명단은 기본 제외 */
 }
@@ -2576,7 +2588,7 @@ async function fbSetMemberGroupBulk(map) {
 
 /* 유아가 있는 어머니 후보 찾기 — 영유아부 명단을 만들 때 쓴다.
    소속이 '유아'인 아이와 집주소가 같은 여자 장년을 모은다.
-   ★ 짐작이므로 화면에 후보로만 보여 주고, 마스터가 골라 담는다.
+   ★ 짐작이므로 화면에 후보로만 보여 주고, 안내실이 골라 담는다.
      아버지나 할머니가 대신 나오시는 경우가 있어 자동으로 담지 않는다. */
 function findBabyParents(members) {
   const babies = members.filter(m => {
@@ -2676,7 +2688,7 @@ function eventTargets(members, ev, groups) {
 
 /* 이 모임을 이 사람에게 보여 줄까 (정식 1.12에서 고쳤다)
 
-   · 관리자·마스터는 전부
+   · 안내실·전도인은 전부
    · 전체 성도가 대상이면 모두에게
    · 명단이 대상이면 그 명단을 고른 담당자에게만
    · 소속(봉사회·어머니회·청년회…)이 대상이면
@@ -2756,7 +2768,7 @@ async function fbSetSheetBulk(key, ids, on) {
   }, { merge:true }), ATT_TIMEOUT, '출석 저장');
 }
 
-/* 여러 장을 한꺼번에 (마스터의 엑셀 내보내기용) — 장 수만큼만 읽는다 */
+/* 여러 장을 한꺼번에 (전도인의 엑셀 내보내기용) — 장 수만큼만 읽는다 */
 async function fbLoadSheets(keys) {
   const out = {};
   for (const k of (keys || [])) {
@@ -2861,8 +2873,8 @@ function readThumbCache(rev) {
    ★ 왜 필요했나
    전에는 로그아웃해도 gsc_members_m_admin 같은 명단이
    그 휴대폰의 저장 공간에 그대로 남았다.
-   관리자가 남의 휴대폰으로 한 번 로그인했다가 나가면
-   관리자용 명단(생년월·비고 포함)이 그 기기에 남는 것이다.
+   안내실이 남의 휴대폰으로 한 번 로그인했다가 나가면
+   안내실용 명단(생년월·비고 포함)이 그 기기에 남는 것이다.
    화면에 쓰이지는 않지만 남겨 둘 이유가 없다.
 
    ★ 무엇을 남기나
@@ -2907,7 +2919,7 @@ async function fbLoadThumbs() {
     return readThumbCache(null) || {};
   }
 
-  /* 색인이 사라졌다 = 관리자가 사진을 전부 지웠다는 뜻.
+  /* 색인이 사라졌다 = 안내실이 사진을 전부 지웠다는 뜻.
      이 기기에 남은 캐시도 함께 비운다. */
   if (!idx.exists) { clearThumbCache(); return {}; }
 
@@ -2916,7 +2928,7 @@ async function fbLoadThumbs() {
 
   /* 판번호가 같으면 기기에 저장해 둔 사진을 그대로 쓴다.
      휴대폰에서 1MB 넘는 사진을 매번 내려받지 않게 하는 핵심 부분.
-     관리자가 사진을 바꾸면 판번호가 달라져 자동으로 새로 받는다. */
+     안내실이 사진을 바꾸면 판번호가 달라져 자동으로 새로 받는다. */
   if (rev) {
     const hit = readThumbCache(rev);
     if (hit) return hit;
@@ -3339,7 +3351,7 @@ function loadXlsxLib() {
 
    ★ 왜 넣었나
    성도들께 앱을 나눠 드린 뒤 「가족이 이상하게 묶였다」는 말이 나오면
-   지금까지는 마스터가 화면에서 한 집 한 집 손으로 고쳐야 했다.
+   지금까지는 안내실이 화면에서 한 집 한 집 손으로 고쳐야 했다.
    교회 명단은 원래 엑셀로 관리하므로, ★엑셀에서 고쳐 다시 올리는 것★이
    훨씬 빠르다.
 
@@ -3505,7 +3517,7 @@ function buildFamilyColumns(members, fam) {
   fams.forEach((g, i) => {
     const fid = 'F' + String(i + 1).padStart(3, '0');
     const { gen, info } = buildGenMap(g, fam);
-    /* 대표 — 마스터가 정한 분이 있으면 그분, 없으면 골라 준다 */
+    /* 대표 — 안내실이 정한 분이 있으면 그분, 없으면 골라 준다 */
     let head = storedHead(g, nf);
     if (!head || !info[head]) head = autoHead(g, gen, info, fam);
     const hm = g.filter(p => p['고유ID'] === head)[0] || null;
@@ -3902,7 +3914,7 @@ function preflight(files, members) {
 const normAddr = a => (a || '').replace(/\s+/g, '').replace(/[()（）]/g, '').toLowerCase();
 
 /* 이 성도의 가족.
-   ★ 마스터가 직접 묶어 둔 가족이 있으면 그것이 전부다 (주소는 보지 않는다).
+   ★ 안내실이 직접 묶어 둔 가족이 있으면 그것이 전부다 (주소는 보지 않는다).
      주소로 잘못 묶인 분을 빼려면 손으로 묶는 수밖에 없기 때문이다.
    ★ 손으로 묶지 않았으면 예전처럼 집주소로 찾는다.
      다만 다른 가족으로 지정된 분은 빼 준다. */
@@ -3920,7 +3932,7 @@ function getFamilyGroup(me, all, fam) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   집안 자리 — 마스터가 손으로 정하는 값 (1.05에서 뜻이 달라졌다)
+   집안 자리 — 안내실이 손으로 정하는 값 (1.05에서 뜻이 달라졌다)
 
    ★ 1.04까지 무엇이 문제였나
    호칭을 ★사람마다 한 개★ 로 저장했다. 그래서 김덕현을 '남편' 으로
@@ -4021,7 +4033,7 @@ const HEAD_SLOT = {
 };
 
 /* 이 말이 우리가 아는 관계 이름인가 (어느 표에든 있으면 그렇다).
-   여기 없는 말(마스터가 직접 적은 '외조모' 등)은 그대로 화면에 보여 준다. */
+   여기 없는 말(안내실이 직접 적은 '외조모' 등)은 그대로 화면에 보여 준다. */
 function isKnownRel(lab) { return !!(lab && (HEAD_SLOT[lab] || ROLE_SLOT[lab])); }
 
 /* 대표가 있으면 대표 기준 표, 없으면 옛 집안 자리 표 */
@@ -4030,7 +4042,7 @@ function slotFor(lab, headId) {
   return (headId ? HEAD_SLOT[lab] : ROLE_SLOT[lab]) || null;
 }
 
-/* 마스터가 고르는 「대표와의 관계」 — 세대 순으로 놓는다 */
+/* 안내실이 고르는 「대표와의 관계」 — 세대 순으로 놓는다 */
 const SLOT_PRESETS = [
   '증조부','증조모','조부','조모','부','모','시부','시모','장인','장모',
   '남편','아내','형','누나','오빠','언니','남동생','여동생',
@@ -4057,10 +4069,10 @@ function slotName(g, kind) {
    ③ 성씨                형제는 성이 같고 부부는 대개 다르다
    ④ 집안 구성            아래 세대가 있으면 그 위는 부모(=부부)다
 
-   그리고 마스터가 정한 집안 자리가 있으면 ★그것이 먼저다★.
+   그리고 안내실이 정한 집안 자리가 있으면 ★그것이 먼저다★.
 
    ★ 확신이 없으면 '가족' 이라고만 한다.
-     마스터 [가족] 탭 → [호칭 점검] 이 그런 집만 골라 준다.
+     안내실 [가족] 탭 → [호칭 점검] 이 그런 집만 골라 준다.
 ═══════════════════════════════════════════════════════════════════ */
 
 /* 무리 — 교회마다 소속 이름이 다르므로 설정에서 가져온다 */
@@ -4112,7 +4124,7 @@ function surnameOf(name) {
 const FAM_GEN_GAP = 18;   /* 부모와 자녀 사이 최소 나이차 */
 
 /* 집안 사람들에게 세대 번호를 매긴다.
-   ★ fam 을 넘기면 마스터가 정한 자리가 우선한다. */
+   ★ fam 을 넘기면 안내실이 정한 자리가 우선한다. */
 function buildGenMap(group, fam) {
   const now = new Date().getFullYear();
   const f = normFamily(fam);
@@ -4130,8 +4142,8 @@ function buildGenMap(group, fam) {
 
   /* ★ 명단에 세대 번호가 실려 있으면 그것을 쓴다 (1.11)
      성도 화면에는 생년월이 없어 나이로 세대를 나눌 수 없다.
-     마스터가 저장할 때 계산해 넣은 번호를 그대로 쓰면
-     성도가 보는 호칭이 관리자가 보는 것과 같아진다.
+     안내실이 저장할 때 계산해 넣은 번호를 그대로 쓰면
+     성도가 보는 호칭이 안내실이 보는 것과 같아진다.
      ★ 집안 사람 전원에게 있을 때만 쓴다 — 한 사람이라도 빠져 있으면
        (새로 넣은 성도 등) 예전처럼 계산한다. */
   const headId = headId0;
@@ -4237,14 +4249,14 @@ function buildGenMap(group, fam) {
   }
   P.forEach(x => { x.g -= base; });
 
-  /* ④ ★마스터가 정한 자리가 있으면 그것에 맞춘다★
+  /* ④ ★안내실이 정한 자리가 있으면 그것에 맞춘다★
      적어 두신 자리와 프로그램이 계산한 세대의 차이를 구해
      전체를 그만큼 옮기고, 적어 두신 분은 정확히 그 자리로 못 박는다.
      ★ 대표가 정해져 있으면 그런 어림이 필요 없다 (finishGenMap 참고). */
   return finishGenMap(P, f, headId);
 }
 
-/* 마스터가 정한 집안 자리를 얹고 세대 지도를 마무리한다.
+/* 안내실이 정한 집안 자리를 얹고 세대 지도를 마무리한다.
    (실려 온 세대를 쓰는 경우와 직접 계산한 경우가 함께 쓴다) */
 function finishGenMap(P, f, headId) {
   /* ═══ 대표가 정해진 집안 (정식 1.13) ═══
@@ -4297,7 +4309,7 @@ function finishGenMap(P, f, headId) {
 }
 
 /* 화면에 뿌릴 호칭.
-   ★ 마스터가 적어 둔 값도 「자리」로만 쓰고, 말은 보는 사람에 맞춰 만든다.
+   ★ 안내실이 적어 둔 값도 「자리」로만 쓰고, 말은 보는 사람에 맞춰 만든다.
      표에 없는 말(직접 적은 '외조모' 같은 것)은 그대로 보여 준다. */
 function getRelLabel(me, other, fam, group) {
   const f = normFamily(fam);
@@ -4903,12 +4915,12 @@ function LoadingView({ text, step, first }) {
        섬기는 분 칸이 아예 없다 (임원 주소를 한 줄로 알려 준다).
 
      BUILD 'admin'   임원판
-       담당자 · 관리자 · 마스터 ★세 칸이 한꺼번에★ 보인다.
+       담당자 · 안내실 · 전도인 ★세 칸이 한꺼번에★ 보인다.
        이 주소를 여는 분은 전부 섬기는 분이므로 감출 이유가 없다.
        기본은 ★담당자★ — 구역장·부장이 가장 많이 쓰신다.
 
      BUILD 'all'     통합판(설치판·손으로 쓰는 파일)
-       첫 화면은 성도 하나뿐이고, 담당자·관리자·마스터는
+       첫 화면은 성도 하나뿐이고, 담당자·안내실·전도인은
        우측 위 [≡] 단추 안에 들어 있다.
 
    ★ 로그인 방식 자체는 하나도 바뀌지 않았다
@@ -4920,8 +4932,8 @@ function LoadingView({ text, step, first }) {
    '임원'(ROLE_LABEL) 과 달리 로그인 화면에서는 '담당자'라 부른다 (1.06 그대로). */
 const LOGIN_ROLES = [
   { key:'leader', label:'담당자', icon:'users',       desc:'구역 · 부서' },
-  { key:'admin',  label:'관리자', icon:'shield-lock', desc:'전도인 · 사무' },
-  { key:'master', label:'마스터', icon:'crown',       desc:'목사님' }
+  { key:'admin',  label:'안내실', icon:'user-shield', desc:'명단 · 사진 · 설정' },
+  { key:'master', label:'전도인', icon:'notes',       desc:'출석 · 심방' }
 ];
 const LOGIN_ROLE_OF = LOGIN_ROLES.reduce((o, r) => { o[r.key] = r; return o; }, {});
 
@@ -4972,7 +4984,7 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
   }, [menu]);
 
   /* 등급을 옮길 때 — 치던 비밀번호와 오류는 반드시 지운다.
-     관리자 비밀번호를 치다 말고 마스터로 옮겼는데 그대로 남아 있으면
+     안내실 비밀번호를 치다 말고 전도인으로 옮겼는데 그대로 남아 있으면
      엉뚱한 계정으로 로그인을 시도하게 된다. */
   function pick(m) {
     setMode(m); setMenu(false);
@@ -5011,7 +5023,7 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
   }
 
   /* 다른 주소를 알려 주는 한 줄 — 임원판에서만 쓴다.
-     성도판에는 애초에 담당자·관리자·마스터로 들어갈 길이 없으므로
+     성도판에는 애초에 담당자·안내실·전도인으로 들어갈 길이 없으므로
      (signInSmart 가 member@ 만 받는다) 성도 화면에는 안내가 필요 없다. */
   const crossLink =
       (BUILD === 'admin' && SITE_MEMBER)
@@ -5041,14 +5053,14 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
         title: theme === 'dark' ? '밝은 화면으로' : '어두운 화면으로'
       }, h('i', { className: 'ti ti-' + (theme === 'dark' ? 'sun' : 'moon') })),
 
-      /* [≡] — 담당자·관리자·마스터가 여기 들어 있다 (통합판만).
+      /* [≡] — 담당자·안내실·전도인이 여기 들어 있다 (통합판만).
          ref 를 이 묶음에만 걸어야 밝기 단추를 눌렀을 때 메뉴가 닫힌다. */
       HAS_MENU && h('div', { ref:menuRef, style:{ position:'relative' } },
         h('button', {
           type:'button', disabled:busy,
           className:'act' + (menu || staff ? ' on' : ''),
-          title:'담당자 · 관리자 · 마스터 로그인',
-          'aria-label':'담당자 · 관리자 · 마스터 로그인',
+          title:'담당자 · 안내실 · 전도인 로그인',
+          'aria-label':'담당자 · 안내실 · 전도인 로그인',
           'aria-haspopup':'menu',
           'aria-expanded': menu ? 'true' : 'false',
           onClick: () => { setMenu(v => !v); setErr(''); }
@@ -5169,9 +5181,7 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
                       style:{ flex:1, minWidth:0, fontSize:'13px', padding:'0 6px' }
                     }, '전체 명단')
                   ]))
-              ),
-          h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', textAlign:'center', lineHeight:1.5 } },
-            lead ? '고른 것: ' + leadName(lead) : '담당하시는 구역이나 부서를 고르세요')
+              )
         ),
 
         h('input', {
@@ -5196,19 +5206,21 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
             ? h('span', { className:'spinner', style:{ width:'17px', height:'17px', borderWidth:'2px' } })
             : h('i', { className:'ti ti-login-2', style:{ fontSize:'19px' } }),
           busy ? '확인 중...' : '로그인')
-      ),
+      )
+    ),
 
-      /* 잘못 찾아오신 분께 다른 주소를 알려 준다 */
-      crossLink && h('p', {
-        style:{ marginTop:'22px', fontSize:'13px', color:'var(--text-3)', lineHeight:1.7 }
-      },
-        crossLink.q, h('br'),
-        h('a', {
-          href:crossLink.href,
-          style:{ color:'var(--navy)', fontWeight:700, textDecoration:'none',
-                  borderBottom:'1.5px solid var(--soft-bd)', paddingBottom:'1px' }
-        }, crossLink.a, ' ›'))
-    )
+    /* ── 화면 가장 하단 ─ 잘못 찾아오신 분께 다른 주소를 한 줄로 안내 ── */
+    crossLink && h('p', {
+      style:{ position:'absolute', left:0, right:0,
+              bottom:'calc(20px + env(safe-area-inset-bottom))',
+              textAlign:'center', fontSize:'13px', color:'var(--text-3)' }
+    },
+      crossLink.q + ' ',
+      h('a', {
+        href:crossLink.href,
+        style:{ color:'var(--navy)', fontWeight:700, textDecoration:'none',
+                borderBottom:'1.5px solid var(--soft-bd)', paddingBottom:'1px' }
+      }, crossLink.a, ' ›'))
   );
 }
 
@@ -5652,7 +5664,7 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
     return true;
   }).sort(sortMembers), [members, search, fGu, fSo, fAtt, fCat, attStatus, listCfg, seeAtt]);
 
-  /* 목록에서 빠진 인원 수 — 마스터·임원에게만 알려 준다.
+  /* 목록에서 빠진 인원 수 — 임원 이상에게만 알려 준다.
      설정을 켜 둔 것을 잊고 '왜 인원이 줄었지?' 하지 않도록. */
   const hiddenN = useMemo(() => {
     const c = normListCfg(listCfg);
@@ -5832,7 +5844,7 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
           seeAtt && hiddenN > 0
             ? h('span', { style:{ color:'var(--text-3)' } }, ' · 목록에서 ' + hiddenN + '명 제외')
             : null,
-          /* 공지·안내 한 줄 — 마스터가 [표시 설정] 탭에서 적는다 */
+          /* 공지·안내 한 줄 — 안내실이 [표시 설정] 탭에서 적는다 */
           notice
             ? h('span', { style:{ color:'var(--navy)', fontWeight:700 } },
                 '\u2002',
@@ -5948,7 +5960,7 @@ const FIELD_ICONS = {
    한 성도에게 여러 건이 날짜별로 쌓이므로,
    목회자가 바뀌어도 지난 심방 이력이 그대로 남는다.
 
-   · 관리자·마스터에게만 보인다 (성도 등급은 아예 호출하지 않는다)
+   · 전도인에게만 보인다 (다른 등급은 아예 호출하지 않는다)
    · 엑셀을 다시 올려도 지워지지 않는다 (별도 컬렉션 visits)
    · 저장 전에 서버를 다시 읽으므로 두 사람이 동시에 적어도 안전하다
 ═══════════════════════════════════════════════════════ */
@@ -6078,7 +6090,7 @@ function VisitNotes({ member, dark }) {
     h('div', { style:{ padding:'14px 16px' } },
 
       h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', lineHeight:1.7, marginBottom:'12px' } },
-        '관리자·마스터만 볼 수 있습니다. 엑셀을 다시 올려도 이 메모는 지워지지 않습니다.'),
+        '전도인만 볼 수 있습니다. 엑셀을 다시 올려도 이 메모는 지워지지 않습니다.'),
 
       err && h('p', { className:'note note-bad', style:{ marginBottom:'12px' } }, err),
 
@@ -6176,7 +6188,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
   /* ★ 담당자 계정은 자기 명단 성도만 고칠 수 있다 (1.06).
      부서가 구역보다 앞선다 — 11구역에 살아도 청년부에서 체크하는
      청년은 11구역 담당자가 손댈 수 없다. (scopeAllows) */
-  /* 마스터가 [주소록 설정] 에서 출석상태 고치기를 잠가 두면
+  /* 안내실이 [표시 설정] 탭의 주소록 설정에서 출석상태 고치기를 잠가 두면
      담당자 화면에서는 배지만 보이고 버튼이 나오지 않는다 (정식 1.12) */
   const canEditAtt = ROLES[role] >= ROLES.leader && !!onAttStatus &&
                      canEditAttCfg(role, listCfg) &&
@@ -6445,7 +6457,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
         ))
       ),
 
-      /* 심방 메모 — 관리자·마스터에게만, 마스터가 켜 둔 경우에만 */
+      /* 심방 메모 — 전도인에게만, 전도인이 켜 둔 경우에만 */
       canVisit(role, visitCfg) && h(VisitNotes, { member:m, dark })
     )
   );
@@ -6463,7 +6475,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
    v26에서 달라진 것
    ────────────────
    · 구역만이 아니라 부서(영유아부·유초등부·중고등부·청년대학부)와
-     마스터가 만든 별도 명단까지 고를 수 있다.
+     전도인이 만든 별도 명단까지 고를 수 있다.
    · 한 사람은 주일에 딱 한 곳에만 나온다 (primaryGid 주석 참고).
    · 주일 말고 지정 날짜 모임(영유아부 모임 목요일 등)도 체크할 수 있다.
 
@@ -6482,7 +6494,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
 function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAttStatus, listCfg,
                       onBack, onSelect, theme, toggle }) {
   const dark    = theme === 'dark';
-  const isAdmin = ROLES[role] >= ROLES.admin;   /* 관리자·마스터는 모든 명단 */
+  const isAdmin = ROLES[role] >= ROLES.admin;   /* 안내실·전도인은 모든 명단 */
   const canEdit = ROLES[role] >= ROLES.leader;
   /* 출석 체크는 그대로 두고 ★출석상태 고치기만★ 잠글 수 있다 (정식 1.12).
      한 번 정리해 두면 한동안 손댈 일이 없어, 주일 아침에 실수로
@@ -6565,7 +6577,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   const curEvent = (selKind === 'e' && events) ? events[selVal] : null;
   const sheetKey = selKind === 'e' ? ('e_' + selVal) : ('w_' + selVal);
 
-  /* 고른 모임이 사라졌거나(마스터가 지움) 내 담당이 아니게 되면 주일로 되돌린다 */
+  /* 고른 모임이 사라졌거나(전도인이 지움) 내 담당이 아니게 되면 주일로 되돌린다 */
   useEffect(() => {
     if (selKind !== 'e' || !events) return;
     if (!curEvent || !canSeeEvent({ ...curEvent }, gid, role, members, groups)) setSel('w:' + lastSunday());
@@ -7674,7 +7686,7 @@ function PhotoManager({ members, photos, onPhotoUpdate, onPhotosReset, dark }) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   심방 메모 관리 (마스터)
+   심방 메모 관리 (전도인)
 
    · 기능을 켜고 끈다
    · 누구까지 열람·기록할 수 있는지 정한다
@@ -7792,20 +7804,9 @@ function VisitAdmin({ members, cfg, onCfgUpdate, dark }) {
         }, lbl))
       ),
 
-      h('p', { style:{ fontSize:'13px', fontWeight:800, color:'var(--text-3)', marginBottom:'6px' } }, '열람·기록 권한'),
-      h('div', { className:'seg', style:{ marginBottom:'10px', opacity: c.enabled ? 1 : .45 } },
-        [['admin','관리자·마스터'],['master','마스터만']].map(([v, lbl]) => h('button', {
-          key:v, type:'button',
-          className: c.level === v ? 'on' : '',
-          disabled: !c.enabled,
-          onClick: () => { setC(o => ({ ...o, level:v })); setMsg(''); }
-        }, lbl))
-      ),
       h('p', { style:{ fontSize:'13px', color:'var(--text-2)', lineHeight:1.75, marginBottom:'14px' } },
         c.enabled
-          ? (c.level === 'admin'
-              ? '전도인·구역장이 관리자 비밀번호로 들어와 직접 기록할 수 있습니다. 성도는 메모가 있는지조차 알 수 없습니다.'
-              : '마스터(목사님)만 열람·기록합니다. 관리자로 들어오면 심방 메모 칸이 아예 보이지 않습니다.')
+          ? '심방 메모는 전도인만 열람·기록합니다. 성도·담당자·안내실 화면에는 심방 메모 칸이 아예 보이지 않습니다.'
           : '심방 메모 칸이 모두에게 보이지 않습니다. 이미 적어 둔 메모는 지워지지 않고 그대로 보관됩니다.'),
 
       h('button', {
@@ -7893,13 +7894,13 @@ function VisitAdmin({ members, cfg, onCfgUpdate, dark }) {
       h('p', { style:{ fontSize:'13px', color:'var(--text-3)', marginTop:'14px', lineHeight:1.8 } },
         '· 기록자 이름은 손으로 적는 칸입니다. 공용 계정이라 사람을 자동으로 알 수 없습니다.', h('br'),
         '· 저장할 때마다 서버를 다시 읽고 쓰므로, 두 분이 같은 성도를 동시에 적어도 지워지지 않습니다.', h('br'),
-        '· 메모는 관리자 등급이면 수정·삭제도 됩니다. 지운 기록은 되돌릴 수 없으니 백업을 받아 두세요.')
+        '· 메모는 전도인이 수정·삭제도 할 수 있습니다. 지운 기록은 되돌릴 수 없으니 백업을 받아 두세요.')
     )
   );
 }
 
 /* ═══════════════════════════════════════════════════════
-   관리자
+   관리 화면 (안내실 · 전도인)
 ═══════════════════════════════════════════════════════ */
 /* ═══════════════════════════════════════════════════════
    연결 진단 칸 (v25 추가) — 심방 메모·출석이 함께 쓴다
@@ -7973,7 +7974,7 @@ function DiagBox({ title, icon, run, colName, hint }) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   마스터 관리 [출석] 탭 (v26 개편)
+   전도인 관리 [출석] 탭 (v26 개편)
 
    네 가지를 여기서 합니다
    ─────────────────────
@@ -8579,7 +8580,7 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
         '담당자 화면의 날짜 목록에 나옵니다. ',
         h('b', null, '주일 출석과 따로 기록되므로'), ' 주일 참석율에 섞이지 않습니다.', h('br'),
         h('span', { style:{ fontSize:'12.5px', color:'var(--text-3)' } },
-          '대상을 ', h('b', null, '명단'), '으로 두면 그 명단 담당자와 관리자에게만 보입니다. ',
+          '대상을 ', h('b', null, '명단'), '으로 두면 그 명단 담당자와 전도인에게만 보입니다. ',
           h('b', null, '소속'), '(봉사회·어머니회·청년회…)으로 두면 ',
           h('b', null, '그 소속 성도가 담긴 명단의 담당자'), '에게만 보입니다. ',
           '11구역 담당자에게는 11구역에 계신 봉사회·어머니회·은장회 모임이 뜨고, ',
@@ -8793,7 +8794,7 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
 }
 
 /* ═══════════════════════════════════════════════════════
-   마스터 관리 [가족] 탭 (v27 추가)
+   안내실 관리 [가족] 탭 (v27 추가)
 
    무엇을 하는 곳인가
    ─────────────────
@@ -9004,7 +9005,7 @@ function FamilyAdmin({ members, family, fieldVis, onFamilyUpdate, onMembersUpdat
      세대 번호 다시 계산 (1.11)
 
      성도 화면에는 생년월이 없어 나이로 세대를 나눌 수 없다.
-     그래서 마스터가 계산한 세대 번호를 명단에 실어 보낸다.
+     그래서 안내실이 계산한 세대 번호를 명단에 실어 보낸다.
      엑셀을 다시 올릴 때 저절로 들어가지만, 엑셀 없이도
      이 단추로 지금 명단에 넣어 줄 수 있다.
   ═══════════════════════════════════════════════════════ */
@@ -9025,7 +9026,7 @@ function FamilyAdmin({ members, family, fieldVis, onFamilyUpdate, onMembersUpdat
     try {
       /* ★ 표시 설정을 반드시 그대로 넘긴다.
          null 을 넘기면 fbSaveMembers 가 기본값으로 config 를 덮어써
-         마스터가 정해 둔 항목 공개 범위가 초기화된다. */
+         안내실이 정해 둔 항목 공개 범위가 초기화된다. */
       await fbSaveMembers(members, fieldVis, fam);
       const next = withFamilyGen(members, fam);
       onMembersUpdate && onMembersUpdate(next);
@@ -9040,12 +9041,12 @@ function FamilyAdmin({ members, family, fieldVis, onFamilyUpdate, onMembersUpdat
     h(Card, null,
       h(SLabel, { icon:'refresh', text:'성도 화면 호칭 맞추기' }),
       h('div', { className:'note note-info', style:{ margin:'10px 0 12px' } },
-        h('b', null, '생년월은 관리자만 볼 수 있습니다.'),
+        h('b', null, '생년월은 안내실·전도인만 볼 수 있습니다.'),
         ' 그래서 성도 화면에는 나이가 없고, 소속만으로는 ',
         '「은장회 남편 + 어머니회 아내」와 「은장회 어머니 + 봉사회 아들」을 ',
         '가릴 수 없습니다.', h('br'),
         '나이를 보내지 않고 ', h('b', null, '세대 번호만'), ' 명단에 넣으면 ',
-        '성도도 관리자와 같은 호칭을 봅니다.'),
+        '성도도 안내실과 같은 호칭을 봅니다.'),
       needGen > 0
         ? h('div', { className:'note note-warn', style:{ marginBottom:'12px' } },
             h('b', null, needGen + '명'), ' 에게 세대 번호가 아직 없습니다. ',
@@ -9503,7 +9504,7 @@ function ListCfgAdmin({ members, attStatus, cfg, onCfgUpdate }) {
     row('담당자의 출석상태 설정', 'statusEdit', '사용함', '잠금',
         c.statusEdit
           ? '구역장·부서 담당자가 출석표와 성도 화면에서 출석상태(정상·주일만·타지역·불참)를 고칠 수 있습니다.'
-          : '출석 체크는 그대로 되고, 출석상태만 고칠 수 없습니다. 한 번 정리해 두셨으면 잠가 두시면 실수로 바뀌지 않습니다. (마스터는 언제나 고칠 수 있습니다)'),
+          : '출석 체크는 그대로 되고, 출석상태만 고칠 수 없습니다. 한 번 정리해 두셨으면 잠가 두시면 실수로 바뀌지 않습니다. (전도인은 언제나 고칠 수 있습니다)'),
 
     h('button', {
       type:'button', onClick:save, disabled:saving || !changed,
@@ -9518,11 +9519,16 @@ function ListCfgAdmin({ members, attStatus, cfg, onCfgUpdate }) {
 }
 
 function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attStatus, family, hasLegacyLogo,
-                     onOpenWizard,
+                     onOpenWizard, role,
                      onBack, onMembersUpdate, onFieldVisUpdate, onVisitCfgUpdate, onListCfgUpdate,
                      onFamilyUpdate, onAttStatus, onAttReload, onAttend,
                      onPhotoUpdate, onPhotosReset, onLogoUpdate, onPreview, theme, toggle }) {
-  const [tab,       setTab]       = useState('upload');
+  /* ═══ 이 화면은 등급에 따라 둘로 갈린다 (등급 개편) ═══
+       안내실 — 데이터 · 사진 · 표시 설정 · 가족 · 비밀번호 · 교회 설정
+       전도인 — 출석 · 심방 메모
+     계정과 비밀번호는 예전 그대로다. 보이는 탭만 달라진다. */
+  const isEvang = role === 'master';
+  const [tab,       setTab]       = useState(isEvang ? 'attend' : 'upload');
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
   const [logoBusy,  setLogoBusy]  = useState(false);
@@ -9613,12 +9619,24 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
     setLogoBusy(false);
   }
 
+  /* 안내실이 평소 들고 다니는 명단은 「안내실용 사본」이라
+     윗 등급 전용으로 잡아 둔 항목이 빠져 있다. 그 사본으로 다시 만들면
+     그 항목이 영영 사라지므로, 저장·백업 때만 온전한 명단을 새로 읽는다. */
+  async function fullList() {
+    if (isEvang) return members;
+    try {
+      const full = await fbLoadMasterMembers();
+      if (full && full.length) return full;
+    } catch(e) {}
+    return members;
+  }
+
   async function saveVis() {
     setVisSaving(true); setVisMsg('');
     try {
-      await fbSaveFieldVis(vis, members);
+      await fbSaveFieldVis(vis, await fullList());
       onFieldVisUpdate(vis);
-      setVisMsg('ok:저장했습니다. 성도용·관리자용 자료도 다시 만들었습니다');
+      setVisMsg('ok:저장했습니다. 성도용·임원용 자료도 다시 만들었습니다');
     } catch(e) { setVisMsg('err:' + fsErrMsg(e)); }
     setVisSaving(false);
   }
@@ -9627,12 +9645,14 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
     try {
       if (!members.length) { alert('내보낼 자료가 없습니다.'); return; }
       await loadXlsxLib();
+      /* 백업은 최후의 보루다 — 반드시 온전한 명단으로 받는다 */
+      const base = await fullList();
       const wb = XLSX.utils.book_new();
       /* 년월은 문자로 내보낸다. 숫자로 나가면 엑셀이 날짜로 바꿔 버린다. */
       /* ★ 가족관계를 두 칸으로 실어 보낸다.
          교회에서 엑셀로 고쳐 다시 올리면 그대로 반영된다. */
-      const famCols = buildFamilyColumns(members, family);
-      const sorted  = sortForFamilyExport(members, famCols);
+      const famCols = buildFamilyColumns(base, family);
+      const sorted  = sortForFamilyExport(base, famCols);
       const rowsOut = sorted.map(mm => {
         const o = {};
         Object.keys(mm).forEach(k => { o[k] = isYmField(k) ? normYm(mm[k]) : mm[k]; });
@@ -9678,20 +9698,23 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
     style:{ marginTop:'10px' }
   }, s.slice(s.indexOf(':') + 1)) : null;
 
-  const tabs = [
-    ['upload','데이터','database-import'],
-    ['photos','사진','photo'],
-    ['vis','표시 설정','eye-cog'],
-    ['attend','출석','clipboard-check'],
-    ['family','가족','users'],
-    ['visit','심방 메모','notes'],
-    ['pwd','비밀번호','lock'],
-    ['church','교회 설정','wand']
-  ];
+  const tabs = isEvang
+    ? [
+        ['attend','출석','clipboard-check'],
+        ['visit','심방 메모','notes']
+      ]
+    : [
+        ['upload','데이터','database-import'],
+        ['photos','사진','photo'],
+        ['vis','표시 설정','eye-cog'],
+        ['family','가족','users'],
+        ['pwd','비밀번호','lock'],
+        ['church','교회 설정','wand']
+      ];
 
   return h('div', { className:'screen' },
     h(AppBar, {
-      title:'마스터 관리', icon:'settings', logoUrl,
+      title: isEvang ? '전도인 관리' : '안내실 관리', icon:'settings', logoUrl,
       left:  h(NBtn, { onClick:onBack, icon:'arrow-left' }, '나가기'),
       right: h(React.Fragment, null,
         h(ThemeBtn, { theme, toggle }),
@@ -9813,7 +9836,7 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
 
           h('p', { style:{ fontSize:'13px', color:'var(--text-3)', marginTop:'16px', lineHeight:1.8 } },
             '· 가족 그룹핑: 구역과 무관하게 집주소가 같으면 자동 연결', h('br'),
-            '· 저장 시 성도용·관리자용 사본이 함께 만들어집니다', h('br'),
+            '· 저장 시 등급별 사본이 함께 만들어집니다', h('br'),
             '· 시트 이름에 "정제"가 있으면 우선 사용합니다', h('br'),
             '· 엑셀에 ', h('b', null, '직분'), ' 칸을 적어 두면 이름 옆에 함께 표시됩니다', h('br'),
             '· ', h('b', null, '심방 메모는 이 업로드로 지워지지 않습니다'),
@@ -9832,7 +9855,7 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
           h('div', { className:'note note-info', style:{ marginBottom:'14px' } },
             '항목을 ', h('b', null, '감춰도 원본 자료는 그대로'), ' 남습니다. 보여줄 대상만 바뀌므로 언제든 되돌릴 수 있습니다.', h('br'),
             h('span', { style:{ fontSize:'13px', opacity:.85 } },
-              '성도 공개 = 모두 / 임원까지 = 임원·관리자·마스터 / 관리자 전용 = 관리자·마스터 / 마스터만 = 나만')
+              '성도 공개 = 모두 / 임원까지 = 임원·안내실·전도인 / 안내실 전용 = 안내실·전도인 / 전도인만 = 전도인만')
           ),
 
           h('div', { style:{ display:'flex', flexDirection:'column', gap:'8px' } },
@@ -9890,7 +9913,7 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
                   h(Bdg, { key:f, t:f, ...tone('blue', dark) }))
           ),
           h('div', { style:{ height:'1px', background:'var(--border)', margin:'14px 0' } }),
-          h(SLabel, { icon:'shield-lock', text:'관리자까지만 보이는 항목' }),
+          h(SLabel, { icon:'shield-lock', text:'안내실·전도인만 보이는 항목' }),
           h('div', { style:{ display:'flex', flexWrap:'wrap', gap:'6px' } },
             DETAIL_FIELDS.filter(f => vis[f] === 'admin').length === 0
               ? h('span', { style:{ fontSize:'14px', color:'var(--text-3)' } }, '없음')
@@ -9899,7 +9922,7 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
           ),
           DETAIL_FIELDS.filter(f => vis[f] === 'master').length > 0 && h(React.Fragment, null,
             h('div', { style:{ height:'1px', background:'var(--border)', margin:'14px 0' } }),
-            h(SLabel, { icon:'lock', text:'마스터만 보이는 항목' }),
+            h(SLabel, { icon:'lock', text:'전도인만 보이는 항목' }),
             h('div', { style:{ display:'flex', flexWrap:'wrap', gap:'6px' } },
               DETAIL_FIELDS.filter(f => vis[f] === 'master').map(f =>
                 h(Bdg, { key:f, t:f, ...tone('gray', dark) }))
@@ -9971,10 +9994,10 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
         h(PwdCard, { role:'leader', icon:'clipboard-check', title:'전체 임원 비밀번호',
                      desc:'모든 명단을 볼 수 있는 임원 계정입니다 (부장·총괄용). 로그인 화면의 「성도」 칸에 이 비밀번호를 넣으면 조용히 임원으로 들어갑니다. 구역·부서 담당자는 아래 계정을 쓰세요 — 자기 명단만 열립니다.' }),
         h(LeaderAccounts, { members }),
-        h(PwdCard, { role:'admin',  icon:'user-shield', title:'관리자용 비밀번호',
-                     desc:'관리자 전용으로 설정한 항목까지 볼 수 있습니다. 자료 수정은 못 합니다.' }),
-        h(PwdCard, { role:'master', icon:'shield-lock', title:'마스터 비밀번호',
-                     desc:'이 관리 화면에 들어올 수 있는 비밀번호입니다. 가장 조심해서 보관하세요.' }),
+        h(PwdCard, { role:'admin',  icon:'user-shield', title:'안내실 비밀번호',
+                     desc:'명단·사진·표시 설정·가족·비밀번호·교회 설정을 맡는 비밀번호입니다. 가장 조심해서 보관하세요.' }),
+        h(PwdCard, { role:'master', icon:'notes', title:'전도인 비밀번호',
+                     desc:'출석표와 심방 메모를 맡는 비밀번호입니다. 명단이나 설정은 고칠 수 없습니다.' }),
 
         h('div', { className:'note note-warn' },
           h('b', null, '비밀번호를 바꾸면 접속 중인 모든 분이 로그아웃됩니다.'), h('br'),
@@ -10201,7 +10224,7 @@ function buildRulesText(cfg) {
     '    }',
     '    function isSignedIn() { return request.auth != null; }',
     '',
-    '    /* 임원 이상 = 임원·관리자·마스터 (출석을 체크할 수 있는 등급)',
+    '    /* 임원 이상 = 임원·안내실·전도인 (출석을 체크할 수 있는 등급)',
     '',
     '       ★ 구역·부서 담당자 계정도 여기 든다 (1.06)',
     '         11@ 12@ … 처럼 ★숫자로 된 계정★ 은 구역 담당자,',
@@ -10219,7 +10242,7 @@ function buildRulesText(cfg) {
     '      );',
     '    }',
     '',
-    '    /* 관리자 이상 = 관리자·마스터 (심방 메모를 볼 수 있는 등급) */',
+    '    /* 안내실·전도인 = 교회 사무를 맡은 두 등급 */',
     '    function isStaff() {',
     '      return isSignedIn() && email() in [',
     '        ' + em('staff') + ',',
@@ -10227,7 +10250,12 @@ function buildRulesText(cfg) {
     '      ];',
     '    }',
     '',
-    '    /* 마스터 = 목사님 (자료를 고칠 수 있는 유일한 등급) */',
+    '    /* 안내실 = 명단·사진·설정을 고치는 등급 */',
+    '    function isOffice() {',
+    '      return isSignedIn() && email() == ' + em('staff') + ';',
+    '    }',
+    '',
+    '    /* 전도인 = 출석과 심방을 맡은 등급 */',
     '    function isMaster() {',
     '      return isSignedIn() && email() == ' + em('master') + ';',
     '    }',
@@ -10235,36 +10263,38 @@ function buildRulesText(cfg) {
     '    /* ── 명단 ───────────────────────────────────────────',
     '       등급별로 문서가 따로 있다. 감출 항목은 애초에 그 문서에',
     '       담지 않으므로, 개발자도구로 뜯어도 나오지 않는다.       */',
-    '    match /church/config   { allow read: if isSignedIn(); allow write: if isMaster(); }',
-    '    match /church/m_member { allow read: if isSignedIn(); allow write: if isMaster(); }',
-    '    match /church/m_leader { allow read: if isLeader();   allow write: if isMaster(); }',
-    '    match /church/m_admin  { allow read: if isStaff();    allow write: if isMaster(); }',
-    '    match /church/m_master { allow read: if isMaster();   allow write: if isMaster(); }',
+    '    /* 설정은 안내실이 고친다. 전도인도 [심방 메모] 켜고 끄기를 여기에',
+    '       담으므로 쓰기를 두 등급에 함께 연다. */',
+    '    match /church/config   { allow read: if isSignedIn(); allow write: if isStaff(); }',
+    '    match /church/m_member { allow read: if isSignedIn(); allow write: if isOffice(); }',
+    '    match /church/m_leader { allow read: if isLeader();   allow write: if isOffice(); }',
+    '    match /church/m_admin  { allow read: if isStaff();    allow write: if isOffice(); }',
+    '    /* 온전한 명단 — 전도인이 보고, 안내실도 백업·표시설정 때 읽는다 */',
+    '    match /church/m_master { allow read: if isStaff();    allow write: if isOffice(); }',
     '',
     '    /* ★ 교회 로고 — config 밖으로 뺐다.',
     '       config 는 접속마다 반드시 읽는 문서라 그 안에 98KB 를 두면',
     '       성도 300명 기준 월 2GB 가 그냥 나간다.',
     '       이 줄이 없으면 성도 화면에 기본 교회 아이콘이 나온다. */',
-    '    match /church/logo     { allow read: if isSignedIn(); allow write: if isMaster(); }',
+    '    match /church/logo     { allow read: if isSignedIn(); allow write: if isOffice(); }',
     '',
-    '    /* 위에 이름이 적히지 않은 나머지 church 문서는 마스터만.',
+    '    /* 위에 이름이 적히지 않은 나머지 church 문서는 안내실·전도인만.',
     '       ★ Firestore 는 겹치는 규칙 중 하나라도 허용하면 허용하므로,',
     '         위의 개별 규칙이 이 줄에 막히지 않는다. */',
-    '    match /church/{doc}    { allow read: if isMaster();   allow write: if isMaster(); }',
+    '    match /church/{doc}    { allow read: if isStaff();    allow write: if isOffice(); }',
     '',
     '    /* ── 사진 ───────────────────────────────────────────── */',
-    '    match /photos/{id}  { allow read: if isSignedIn(); allow write: if isMaster(); }',
-    '    match /thumbs/{id}  { allow read: if isSignedIn(); allow write: if isMaster(); }',
+    '    match /photos/{id}  { allow read: if isSignedIn(); allow write: if isOffice(); }',
+    '    match /thumbs/{id}  { allow read: if isSignedIn(); allow write: if isOffice(); }',
     '',
     '    /* ── 심방 메모 ───────────────────────────────────────',
-    '       성도·임원은 요청 자체가 거부된다. 화면에서 가리는 것이 아니다.',
-    '       진짜로 목사님만 보셔야 하면 isStaff() 를 isMaster() 로 바꾸세요',
-    '       (그러면 전도인은 적을 수 없습니다).                   */',
-    '    match /visits/{id} { allow read, write: if isStaff(); }',
+    '       심방은 전도인 전용이다. 성도·임원·안내실은 요청 자체가',
+    '       거부된다. 화면에서 가리는 것이 아니다.               */',
+    '    match /visits/{id} { allow read, write: if isMaster(); }',
     '',
     '    /* ── 출석 ────────────────────────────────────────────',
     '       읽기는 임원 이상. 쓰기는 두 가지로 나눈다.',
-    '       · groups · events → 마스터만 (명단 구성과 모임 개설은 목사님 몫)',
+    '       · groups · events → 전도인만 (명단 구성과 모임 개설은 전도인 몫)',
     '       · 그 밖 → 임원 이상',
     '       ★ 두 줄로 나누어 쓰면 안 된다. 겹치는 규칙 중 하나라도',
     '         허용하면 허용되므로, 한 줄에 조건으로 갈라 적어야 막힌다. */',
@@ -10275,7 +10305,7 @@ function buildRulesText(cfg) {
     '    }',
     '',
     '    /* ── 연결 진단용 ─────────────────────────────────────── */',
-    '    match /_diagnostic/{id} { allow read, write: if isMaster(); }',
+    '    match /_diagnostic/{id} { allow read, write: if isStaff(); }',
     '  }',
     '}'
   ].join('\n');
@@ -10323,7 +10353,7 @@ const COL_HELP = [
   ['부가','집전화','063-123-4567'],
   ['부가','지역','나운동 · 수송동'],
   ['부가','출석상태','정상 · 주일만 · 타지역 · 불참. 비우면 정상입니다.'],
-  ['부가','비고','기본은 관리자만 봅니다. ★ 심방 메모를 여기 적지 마세요 — 다시 올리면 사라집니다.'],
+  ['부가','비고','기본은 안내실·전도인만 봅니다. ★ 심방 메모를 여기 적지 마세요 — 다시 올리면 사라집니다.'],
   ['자동','고유ID','★ 비워 두세요. 프로그램이 만듭니다. 사진·심방메모·출석이 이 값으로 성도를 찾습니다.'],
   ['자동','가족코드','★ 비워 두세요. 프로그램이 만듭니다.'],
   ['','',''],
@@ -10465,7 +10495,7 @@ async function probeFirebase(fb, domain) {
     await withTimeout(app.auth().signInWithEmailAndPassword('master@' + domain, 'x'.repeat(24) + '_probe'),
                       12000, '로그인 시험');
     authOk = true;
-    notes.push(['warn', '어쩌다 비밀번호가 맞았습니다. 마스터 비밀번호를 바꿔 주세요.']);
+    notes.push(['warn', '어쩌다 비밀번호가 맞았습니다. 전도인 비밀번호를 바꿔 주세요.']);
     try { await app.auth().signOut(); } catch(e) {}
   } catch(e) {
     const c = (e && e.code) || '', msg = String((e && e.message) || '');
@@ -10777,8 +10807,8 @@ function SetupWizard({ initial, onClose, startAt }) {
   const ROLES4 = [
     ['member', '성도용',              'users'],
     ['leader', '임원용 (구역장·부장)', 'clipboard-check'],
-    ['staff',  '관리자용',            'user-shield'],
-    ['master', '마스터용 (목사님)',   'shield-lock']
+    ['staff',  '안내실용',            'user-shield'],
+    ['master', '전도인용',            'notes']
   ];
   const emails = ROLES4.map(r => r[0] + '@' + d);
 
@@ -11214,7 +11244,7 @@ function SetupWizard({ initial, onClose, startAt }) {
       h('b', null, '규칙을 먼저 게시하면 구역장이 빈 화면을 봅니다.'), ' 아래 순서대로만 하세요.'),
     stack(9,
       h(Task, { key:'s1', done:done.s1, onToggle:() => tick('s1') },
-        h('b', null, '1. 마스터로 로그인'), ' — 새 주소를 열고 「마스터」 칸에'),
+        h('b', null, '1. 안내실로 로그인'), ' — 새 주소를 열고 「안내실」 칸에'),
       h(Task, { key:'s2', done:done.s2, onToggle:() => tick('s2') },
         h('b', null, '2. [데이터] 탭 → 엑셀 올리기')),
       h(Task, { key:'s3', done:done.s3, onToggle:() => tick('s3') },
@@ -11245,7 +11275,7 @@ function SetupWizard({ initial, onClose, startAt }) {
     ['c4', '전화·문자 단추가 실제로 걸린다'],
     ['c5', '주소 옆 길찾기가 열린다'],
     ['c6', '임원 비밀번호로 출석표가 열린다'],
-    ['c7', '관리자 비밀번호로 심방 메모가 적힌다'],
+    ['c7', '전도인 비밀번호로 심방 메모가 적힌다'],
     ['c8', '홈 화면 아이콘이 앱처럼 열린다']
   ];
   const nDone = CHECKS.filter(c => done[c[0]]).length;
@@ -11270,8 +11300,8 @@ function SetupWizard({ initial, onClose, startAt }) {
   const FEATURES = [
     ['users',           '성도',   '검색·초성·필터, 전화·문자, 길찾기, 가족 자동 연결'],
     ['clipboard-check', '임원',   '주일 출석표, 출석상태 4가지, 구역·부서별 참석율'],
-    ['notes',           '관리자', '심방 메모 — 엑셀을 다시 올려도 남습니다'],
-    ['shield-lock',     '마스터', '엑셀·사진·표시 설정·명단 묶음·모임·비밀번호·백업']
+    ['user-shield',     '안내실', '엑셀·사진·표시 설정·가족 묶음·비밀번호·백업'],
+    ['notes',           '전도인', '출석 모임 관리, 심방 메모 — 엑셀을 다시 올려도 남습니다']
   ];
   S.push(stack(16,
     h('div', { key:'i', style:{ textAlign:'center', paddingTop:'8px' } },
@@ -11368,7 +11398,7 @@ function FbErrorView({ msg }) {
 function AppReady({ wizard, setWizard }) {
   const [theme, toggle] = useTheme();
 
-  /* 마스터가 [교회 설정] 탭에서 연 경우 —
+  /* 안내실이 [교회 설정] 탭에서 연 경우 —
      지금 설정을 채운 채로 마법사를 띄운다. 설정 마당(5번째 화면)부터 시작한다.
      ★ 나갈 때 원래 색을 다시 입힌다 (마법사에서 색을 만졌을 수 있다) */
   if (wizard) return h(SetupWizard, {
@@ -11451,7 +11481,7 @@ function AppReady({ wizard, setWizard }) {
   const [family,   setFamily]   = useState(() => normFamily(cachedData ? cachedData.family : DEFAULT_FAMILY));
   const [selected, setSelected] = useState(null);
   const [loadErr,  setLoadErr]  = useState('');
-  /* 예전 방식(config 안)에 로고가 남아 있나 — 마스터 화면에서 옮기라고 권한다 */
+  /* 예전 방식(config 안)에 로고가 남아 있나 — 안내실 화면에서 옮기라고 권한다 */
   const [hasLegacyLogo, setHasLegacyLogo] = useState(() => {
     try { return localStorage.getItem('gsc_legacyLogo') === '1'; } catch(e) { return false; }
   });
@@ -11576,7 +11606,7 @@ function AppReady({ wizard, setWizard }) {
      하나 쌓아 둔다. 뒤로 가기가 오면 그 기록이 하나 걷히면서
      우리 코드가 불려 오고, 그때 ★왼쪽 위 [뒤로] 와 똑같은 일★ 을 한다.
 
-     목록(성도용)·마스터 관리처럼 ★뿌리 화면★ 에서는 그대로 앱을 닫는다.
+     목록(성도용)·관리 화면처럼 ★뿌리 화면★ 에서는 그대로 앱을 닫는다.
      안드로이드에서는 그것이 관례이고, 그때는 불편하다는 말씀도 없었다.
 
      ★ 기록 수를 세어 두는 이유
@@ -11773,14 +11803,14 @@ function AppReady({ wizard, setWizard }) {
   if (phase === 'detail' && selected) return h(DetailView, {
     ...tp, member:selected, allMembers:members, photos, logoUrl, role, fieldVis, visitCfg, listCfg,
     attStatus, onAttStatus: changeAtt, family,
-    isAdmin: role === 'master',
+    isAdmin: role === 'admin',   /* 사진 변경은 안내실 몫이다 (등급 개편) */
     onBack:        goBack,
     onNavigate:    m  => setSelected(m),
     onPhotoUpdate: updatePhoto
   });
 
   if (phase === 'admin') return h(AdminView, {
-    ...tp, members, photos, fieldVis, logoUrl, visitCfg, listCfg, attStatus, family, hasLegacyLogo,
+    ...tp, role, members, photos, fieldVis, logoUrl, visitCfg, listCfg, attStatus, family, hasLegacyLogo,
     onFamilyUpdate:    setFamily,
     onAttStatus:       changeAtt,
     onAttReload:       () => loadAtt(role),
@@ -11802,8 +11832,10 @@ function AppReady({ wizard, setWizard }) {
     view, setView, scrollRef: listScroll,
     onLogout:     logout,
     onSelect:     goDetail,
-    onAttend:     ROLES[role] >= ROLES.leader ? goAttend : null,
-    onAdminPanel: role === 'master' ? () => setPhase('admin') : null
+    /* 출석표 — 담당자와 전도인만. 안내실은 출석을 다루지 않는다 (등급 개편) */
+    onAttend:     (role !== 'admin' && ROLES[role] >= ROLES.leader) ? goAttend : null,
+    /* 관리 화면 — 안내실과 전도인이 모두 들어간다. 보이는 탭이 서로 다르다 */
+    onAdminPanel: ROLES[role] >= ROLES.admin ? () => setPhase('admin') : null
   });
 }
 
