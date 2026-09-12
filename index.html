@@ -650,14 +650,6 @@ const CHURCH_CFG = {
   },
   "deptDefs": [
     {
-      "id": "d_baby",
-      "name": "영유아부",
-      "so": [
-        "유아"
-      ],
-      "inGu": false
-    },
-    {
       "id": "d_child",
       "name": "유초등부",
       "so": [
@@ -675,15 +667,6 @@ const CHURCH_CFG = {
         "고등부"
       ],
       "inGu": false
-    },
-    {
-      "id": "d_youth",
-      "name": "청년·대학부",
-      "so": [
-        "청년회",
-        "대학부"
-      ],
-      "inGu": true
     }
   ],
   "fb": {
@@ -892,7 +875,7 @@ Object.keys(ROLE_EMAIL).forEach(r => { EMAIL_ROLE[ROLE_EMAIL[r].toLowerCase()] =
 
    1.06부터는 담당자마다 계정이 따로다.
      11@ 12@ 13@ 21@ 22@ 23@ 31@ 32@ 33@ 41@ 42@ 43@   ← 구역 열둘
-     child@ (유초등부)  teen@ (중고등부)  youth@ (청년·대학부)
+     child@ (유초등부)  teen@ (중고등부)   — 교회 설정 deptAccounts 에 적힌 것
    계정 이름이 곧 담당 명단이므로, 로그인하면 ★자기 명단만★ 열린다.
 
    ★ 계정 이름을 왜 숫자로 했나
@@ -1083,8 +1066,17 @@ function normVisitCfg(v) {
      성도 화면에는 출석상태가 아예 오지 않는다 (안내실 전용 항목).
      그래서 성도 기기는 누가 전출·미출석인지 스스로 알 수 없다.
      안내실이 저장할 때 골라 둔 고유ID 목록을 함께 보내야 성도 화면에서도
-     그분들이 빠진다. 임원 이상은 출석상태를 갖고 있으므로 방금 바꾼
-     상태가 곧바로 반영된다 (아래 listShows 의 live 참고).
+     그분들이 빠진다.
+
+   ★ 1.16 — 임원도 ★이 목록★ 을 본다 (성도판·임원판이 어긋나던 문제)
+     예전에는 임원만 「지금 출석상태」로 그때그때 계산했다. 그러면
+     구역장이 한 사람의 상태를 바꾼 순간부터 ★임원판과 성도판의 명단이
+     달라졌다★ (안내실이 [표시 설정]에서 다시 저장해야 맞았다).
+     실제로 11구역 김태진 한 분이 임원판에서만 사라지는 일이 있었다.
+     성도 기기에 출석상태를 보낼 수는 없으므로(보안 규칙), 반대로
+     ★두 판 모두 저장된 목록 하나만 보게★ 맞췄다.
+     대신 안내실 [표시 설정] 화면이 「지금 기준과 몇 명 다른지」를 알려 주고,
+     [저장] 한 번으로 최신으로 맞춘다.
 
    ★ 감추는 것은 ★주소록 목록뿐★ 이다.
      출석표·출석상태 화면에는 설정과 무관하게 그대로 나온다.
@@ -1103,17 +1095,26 @@ function normListCfg(v) {
 }
 
 /* 이 성도를 ★주소록 목록★ 에 낼까 (출석표에는 늘 나온다)
-   live = 출석상태를 볼 수 있는 등급인가 (임원 이상) */
+
+   ★ 등급을 가리지 않는다 — 성도·임원·안내실이 모두 ★같은 목록★ 을 본다.
+     (attStatus·live 인자는 부르는 곳을 고치지 않으려고 남겨 두었다) */
 function listShows(m, attStatus, cfg, live) {
   const c = normListCfg(cfg);
   if (!c.hideAway && !c.hideAbsent) return true;
   if (!m) return true;
-  if (live) {
-    const f = effAttFull(m, attStatus);
-    return !((c.hideAway && f.marks.indexOf('전출') >= 0) ||
-             (c.hideAbsent && f.state === '미출석' && !isAttExempt(m)));
-  }
   return c.hidden.indexOf(String(m['고유ID'])) < 0;
+}
+
+/* 지금 출석상태로 다시 계산하면 목록에서 빠질 분들 —
+   안내실 [표시 설정]이 저장할 값이자, 저장된 목록과 견주는 기준이다. */
+function hideIdsNow(members, attStatus, cfg) {
+  const c = normListCfg(cfg);
+  if (!c.hideAway && !c.hideAbsent) return [];
+  return (members || []).filter(m => {
+    const f = effAttFull(m, attStatus);
+    return (c.hideAway && f.marks.indexOf('전출') >= 0) ||
+           (c.hideAbsent && f.state === '미출석' && !isAttExempt(m));
+  }).map(m => String(m['고유ID']));
 }
 
 /* 담당자가 출석상태를 고칠 수 있나 — 전도인은 설정과 무관하게 늘 가능하다 */
@@ -2454,8 +2455,7 @@ async function fbSetAttStatusBulk(map) {
 
    왜 구역만으로는 안 되는가
    ────────────────────────
-   주일에 교회학교 학생은 부서에서 따로 말씀을 듣고,
-   영유아부 어머니들도 영유아부에서 따로 듣습니다.
+   주일에 교회학교 학생은 부서에서 따로 말씀을 듣습니다.
    그런데 그분들도 어느 구역에는 속해 있습니다.
    구역 명단에 그대로 두면 구역장은 자기가 만나지도 못한 분을
    체크해야 하고, 교회 전체 참석자 수는 한 사람이 두 번 잡힙니다.
@@ -2507,8 +2507,14 @@ async function fbSetAttStatusBulk(map) {
      그래서 춘천교회에서는 유초등부·중고등부만 따로 남습니다.
      (DEPT_HAS_ACCOUNT 주석 참고)
 
-   교회학교(유초등부·중고등부)와 영유아 아기는 구역 통계에 넣지 않습니다.
+   교회학교(유초등부·중고등부)는 구역 통계에 넣지 않습니다.
    구역은 장년 조직이라 아이들까지 넣으면 구역 참석율의 뜻이 흐려집니다.
+
+   ★ 1.16 현재 춘천교회에는 담당자 계정이 있는 부서가 유초등부·중고등부
+     둘뿐이고, 영유아부·청년·대학부 부서는 설정에서 아예 없앴습니다.
+     그 소속(유아·청년회·대학부) 성도는 자기 구역에서 체크합니다.
+     그래서 inGu 는 지금 쓰이는 곳이 없지만, 부서를 다시 두는 교회를 위해
+     기능은 그대로 둡니다.
 
    ★ 전도인이 관리 화면 [출석] 탭에서 부서·별도 명단마다 바꿀 수 있습니다.
      (영유아부에 담은 어머니들을 구역 통계에 넣고 싶으실 때 쓰십니다)
@@ -2821,13 +2827,13 @@ function eventTargets(members, ev, groups) {
      ★ 그 소속 성도가 내 명단에 실제로 담겨 있을 때만 ★
 
    ★ 왜 바꿨나
-     전에는 소속 모임이 임원 모두에게 보였다. 그래서 청년부 담당자에게
+     전에는 소속 모임이 임원 모두에게 보였다. 그래서 부서 담당자에게
      은장회 모임까지 날짜 목록에 떴고, 눌러도 대상 성도가 한 명도 없었다.
      거꾸로 11구역 담당자에게는 11구역에 계신 봉사회·어머니회·은장회
      성도의 모임이 필요하다. 그 판단을 명단으로 하면 정확히 맞는다.
-       · 청년부 계정  → 청년회 모임 + 전체 모임
+       · 중고등부 계정 → 중등부·고등부 모임 + 전체 모임
        · 11구역 계정  → 전체 모임 + 11구역 명단 모임 + 봉사회·어머니회·은장회 모임
-     (청년은 청년부에서 체크하므로 11구역 담당자에게는 청년회 모임이 뜨지 않는다) */
+     (1.16부터 청년은 자기 구역에서 체크하므로 11구역 담당자에게 청년회 모임이 뜬다) */
 function canSeeEvent(ev, myGid, role, members, groups) {
   if (ROLES[role || 'member'] >= ROLES.admin) return true;
   const ts = evTgtList(ev);
@@ -4290,7 +4296,8 @@ const TAL_BANDS = [
    · 출석A·출석B·미출석 어느 숫자에도 들어가지 않는다
    · 집계에서는 「영유아」 칸에 ★전원★ 이 들어가고, 총출석인원에 함께 잡힌다
      (그래서 등록인원 = 총출석인원 + 미출석 이 그대로 맞는다)
-   · 주일 참석율에서는 늘 대상이다 — 영유아부에서 매주 체크하기 때문이다
+   · 주일 참석율에서는 늘 대상이다 — 주일마다 함께 나오시기 때문이다
+     (1.16부터 영유아는 자기 구역 명단에서 체크한다)
 
    교회 설정의 영유아부 소속(TAL_BABY_SO)과, 이름이 「영아·유아·영유아」로
    시작하는 소속을 함께 본다. 유년부·유치부는 걸리지 않는다. */
@@ -7059,7 +7066,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
 
    v26에서 달라진 것
    ────────────────
-   · 구역만이 아니라 부서(영유아부·유초등부·중고등부·청년대학부)와
+   · 구역만이 아니라 부서(담당자 계정이 있는 부서)와
      전도인이 만든 별도 명단까지 고를 수 있다.
    · 한 사람은 주일에 딱 한 곳에만 나온다 (primaryGid 주석 참고).
    · 주일 말고 지정 날짜 모임(영유아부 모임 목요일 등)도 체크할 수 있다.
@@ -7227,7 +7234,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
         /* 미출석으로 두었던 분이 오랜만에 나오셔서 체크가 되면
            그 주에는 대상과 참석에 함께 넣는다. 그래야 참석율이 100%를
            넘지 않고, 돌아오신 분이 숫자에서 사라지지도 않는다.
-           ★ 영유아는 늘 대상이다 — 영유아부에서 매주 체크하기 때문이다. */
+           ★ 영유아는 늘 대상이다 — 주일마다 함께 나오시기 때문이다. */
         if (ex || isAttTarget(st) || on) { r.target++; if (on) r.come++; }
       });
       return r;
@@ -7586,7 +7593,9 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
           }, '한 번 고르시면 이 휴대폰은 다음부터 바로 이 명단이 나옵니다.'),
           h('p', {
             style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'6px', lineHeight:1.55 }
-          }, '교회학교 학생과 영유아부 어머니는 부서 명단에만 나옵니다. 한 분을 두 곳에서 체크하는 일이 없도록 한 것입니다.')
+          }, (DEPT_DEFS.map(d => d.name).join('·') || '부서') +
+             ' 학생은 그 부서 명단에만 나옵니다. 한 분을 두 곳에서 체크하는 일이 없도록 한 것입니다. ' +
+             '그 밖의 성도는 모두 자기 구역 명단에 있습니다.')
         ),
 
         (!curEvent && !gid)
@@ -9419,16 +9428,18 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
       h(SLabel, { icon:'users-group', text:'명단 묶음 — 누가 누구를 체크하나' }),
       h('div', { className:'note note-info', style:{ marginBottom:'14px' } },
         h('b', null, '한 사람은 주일에 딱 한 곳에만 나옵니다.'), h('br'),
-        '① 여기서 직접 지정한 명단 → ② 소속이 교회학교·영유아면 그 부서 → ③ 자기 구역',
+        '① 여기서 직접 지정한 명단 → ② ',
+        h('b', null, '담당자 계정이 있는 부서'), ' (' + (DEPT_DEFS.map(d => d.name).join(' · ') || '없음') + ')',
+        ' → ③ 자기 구역',
         h('br'),
         h('span', { style:{ fontSize:'12.5px', opacity:.85 } },
           '그래서 아래 인원을 모두 더하면 정확히 전체 성도 수가 됩니다. 겹치지도, 빠지지도 않습니다.'),
         h('br'), h('br'),
-        h('b', null, '「구역포함」 단추'), ' — 체크는 이 명단에서 하지만 ',
-        h('b', null, '구역 참석율에도 함께'), ' 넣습니다. ',
-        '청년·대학부는 성인이고 구역원이므로 켜 두었습니다. ',
-        '교회학교와 영유아 아기는 꺼 두었습니다. ',
-        '영유아부에 담은 어머니들을 구역 숫자에도 넣고 싶으시면 영유아부를 켜 주세요.'),
+        h('b', null, '따로 체크하고 싶은 모임이 있으면'), ' 아래에서 ',
+        h('b', null, '별도 명단'), '을 만들어 그분들을 담으세요. ',
+        '그 지정이 부서·구역보다 앞섭니다.', h('br'),
+        h('b', null, '「구역포함」 단추'), ' — 체크는 그 명단에서 하지만 ',
+        h('b', null, '구역 참석율에도 함께'), ' 넣습니다 (구역원인 어른을 담은 명단에 켜 두세요).'),
 
       groups === null
         ? h('p', { style:{ fontSize:'14px', color:'var(--text-3)' } }, '불러오는 중...')
@@ -9502,8 +9513,9 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
             },
               h(SLabel, { icon:'user-plus', text:'「' + editName + '」 인원 (' + editMembers.length + '명)' }),
 
-              /* 영유아부처럼 유아가 있는 명단이면 어머니 후보를 먼저 보여 준다 */
-              (editGid === 'd_baby' || /영유아|유아/.test(editName)) && babyCands.length > 0 && h('div', {
+              /* 영유아부처럼 유아가 있는 명단이면 어머니 후보를 먼저 보여 준다
+                 (1.16에서 영유아부 부서를 없앴으므로 이름으로만 알아본다) */
+              /영유아|영아|유아/.test(editName) && babyCands.length > 0 && h('div', {
                 style:{ marginBottom:'14px' }
               },
                 h('div', { className:'note note-warn' },
@@ -9594,8 +9606,8 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
           '대상을 ', h('b', null, '명단'), '으로 두면 그 명단 담당자와 전도인에게만 보입니다. ',
           h('b', null, '소속'), '(봉사회·어머니회·청년회…)으로 두면 ',
           h('b', null, '그 소속 성도가 담긴 명단의 담당자'), '에게만 보입니다. ',
-          '11구역 담당자에게는 11구역에 계신 봉사회·어머니회·은장회 모임이 뜨고, ',
-          '청년부 담당자에게는 청년회 모임과 전체 모임만 뜹니다.')),
+          '11구역 담당자에게는 11구역에 계신 봉사회·어머니회·은장회·청년회 모임이 뜨고, ',
+          '중고등부 담당자에게는 중등부·고등부 모임과 전체 모임만 뜹니다.')),
 
       h('div', { style:{ display:'flex', flexDirection:'column', gap:'8px' } },
         h('input', {
@@ -10437,14 +10449,22 @@ function ListCfgAdmin({ members, attStatus, cfg, onCfgUpdate }) {
   /* 지금 출석상태 기준으로 목록에서 빠질 분들.
      성도 기기는 출석상태를 못 받으므로 이 고유ID 목록을 함께 보낸다
      (normListCfg 주석 참고). */
-  const hideIds = useMemo(() => {
-    if (!c.hideAway && !c.hideAbsent) return [];
-    return members.filter(m => {
-      const f = effAttFull(m, attStatus);
-      return (c.hideAway && f.marks.indexOf('전출') >= 0) ||
-             (c.hideAbsent && f.state === '미출석' && !isAttExempt(m));
-    }).map(m => String(m['고유ID']));
-  }, [members, attStatus, c.hideAway, c.hideAbsent]);
+  const hideIds = useMemo(() => hideIdsNow(members, attStatus, c),
+    [members, attStatus, c.hideAway, c.hideAbsent]);
+
+  /* 저장된 목록과 지금 기준이 어긋난 분들 — 누가 달라졌는지 이름으로 보여 준다 */
+  const drift = useMemo(() => {
+    const saved = new Set(normListCfg(cfg).hidden.map(String));
+    const now   = new Set(hideIds.map(String));
+    const name  = id => {
+      const m = members.filter(x => String(x['고유ID']) === String(id))[0];
+      return m ? ((m['이름'] || '') + (m['동명이인구분'] || '')) : ('알 수 없음(' + id + ')');
+    };
+    return {
+      add:  hideIds.filter(id => !saved.has(String(id))).map(name),   /* 이제 빠져야 할 분 */
+      keep: [...saved].filter(id => !now.has(String(id))).map(name)   /* 이제 다시 나와야 할 분 */
+    };
+  }, [members, hideIds, cfg]);
 
   const base = normListCfg(cfg);
   const changed = c.notice     !== base.notice
@@ -10518,9 +10538,26 @@ function ListCfgAdmin({ members, attStatus, cfg, onCfgUpdate }) {
     },
       '지금 기준으로 ', h('b', null, hideIds.length + '명'), ' 이 주소록 목록에서 빠집니다.', h('br'),
       h('span', { style:{ fontSize:'13px', opacity:.9 } },
-        '성도 화면에는 출석상태가 아예 가지 않으므로, 이 ', h('b', null, hideIds.length + '명'),
-        ' 을 저장할 때 함께 실어 보냅니다. 나중에 출석상태를 고치셨으면 ',
-        h('b', null, '여기서 한 번 더 저장'), '해 주세요.')),
+        '성도 화면에는 출석상태가 아예 가지 않으므로, 이 목록을 저장할 때 함께 실어 보냅니다. ',
+        '성도·임원·안내실이 모두 ', h('b', null, '이 목록 하나'), ' 를 봅니다.')),
+
+    /* ★ 저장된 목록이 낡았으면 — 세 화면이 어긋나 있는 상태다 */
+    (c.hideAway || c.hideAbsent) && (drift.add.length + drift.keep.length) > 0 && h('div', {
+      className:'note note-warn', style:{ marginBottom:'14px' }
+    },
+      h('b', null, '저장된 목록이 지금 출석상태와 ' +
+        (drift.add.length + drift.keep.length) + '명 다릅니다.'), h('br'),
+      '아래 ', h('b', null, '[저장]'), ' 을 한 번 눌러 주세요. 누르시기 전까지는 예전 목록이 그대로 쓰입니다.',
+      drift.add.length > 0 && h(React.Fragment, null, h('br'),
+        h('span', { style:{ fontSize:'13px' } },
+          '이제 ', h('b', null, '빠져야 할 분'), ' — ',
+          drift.add.slice(0, 12).join(', '),
+          drift.add.length > 12 ? ' 외 ' + (drift.add.length - 12) + '명' : '')),
+      drift.keep.length > 0 && h(React.Fragment, null, h('br'),
+        h('span', { style:{ fontSize:'13px' } },
+          '이제 ', h('b', null, '다시 나와야 할 분'), ' — ',
+          drift.keep.slice(0, 12).join(', '),
+          drift.keep.length > 12 ? ' 외 ' + (drift.keep.length - 12) + '명' : ''))),
 
     h('div', { style:{ height:'1px', background:'var(--border)', margin:'16px 0' } }),
 
