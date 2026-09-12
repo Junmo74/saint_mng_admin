@@ -2632,6 +2632,11 @@ function buildGroups(members, groups, by) {
   };
 
   members.forEach(m => {
+    /* ★ 영아·유아·영유아는 주일 출석 체크를 하지 않는다 (사용자 결정 2026-09-12).
+         품에 안겨 오시는 아기를 매주 체크하는 것은 뜻이 없고, 집계에서는
+         「영유아」 칸에 전원이 그대로 들어가므로 숫자도 빠지지 않는다.
+       ★ 전도인이 별도 명단에 직접 담아 두었으면 그 지정이 앞선다. */
+    if (isAttExempt(m) && !g.member[m && m['고유ID']]) return;
     const id = pick(m, g);
     let name = '미지정', kind = 'none';
     if (id.indexOf('gu_') === 0)      { name = id.slice(3) + '구역';        kind = 'gu'; }
@@ -7234,8 +7239,9 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
         /* 미출석으로 두었던 분이 오랜만에 나오셔서 체크가 되면
            그 주에는 대상과 참석에 함께 넣는다. 그래야 참석율이 100%를
            넘지 않고, 돌아오신 분이 숫자에서 사라지지도 않는다.
-           ★ 영유아는 늘 대상이다 — 주일마다 함께 나오시기 때문이다. */
-        if (ex || isAttTarget(st) || on) { r.target++; if (on) r.come++; }
+           ★ 영유아는 주일 체크를 하지 않으므로 대상이 아니다.
+             (별도 명단에 담아 체크하신 경우에만 그 주 대상에 들어간다) */
+        if ((!ex && isAttTarget(st)) || on) { r.target++; if (on) r.come++; }
       });
       return r;
     };
@@ -7299,6 +7305,30 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
     const ia = SO_ORDER.indexOf(a), ib = SO_ORDER.indexOf(b);
     return ((ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)) || a.localeCompare(b, 'ko');
   };
+
+  /* ★ 고른 명단이 구역이면 — 그 구역인데 이 명단에 없는 분을 알려 준다 (1.16)
+       구역장이 「우리 구역 34명인데 왜 31명이지?」 하고 헷갈리지 않도록,
+       빠진 분을 ★이름까지★ 짚어 준다.
+         · 교회학교 학생 — 그 부서에서 체크한다
+         · 영유아        — 주일 체크를 하지 않는다 */
+  const outsiders = useMemo(() => {
+    if (curEvent || !gid || gid.indexOf('gu_') !== 0) return null;
+    const code = gid.slice(3);
+    const mine = new Set(((groupList.find(x => x.id === gid) || {}).list || [])
+                          .map(m => String(m['고유ID'])));
+    const rest = members.filter(m =>
+      String(m['구역'] || '').trim() === code && !mine.has(String(m['고유ID'])));
+    if (!rest.length) return null;
+    const baby = rest.filter(m => isAttExempt(m));
+    const byDept = {};
+    rest.filter(m => !isAttExempt(m)).forEach(m => {
+      const d = deptOf(m);
+      const k = (d && d.name) || '다른 명단';
+      (byDept[k] = byDept[k] || []).push(m['이름']);
+    });
+    return { baby: baby.map(m => m['이름']), byDept,
+             total: rest.length, code };
+  }, [members, groupList, gid, curEvent]);
 
   /* 구역 통계에 함께 드는 부서가 있는지 — 안내 문구를 낼지 정한다 */
   const inGuDepts = useMemo(() =>
@@ -7406,7 +7436,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   async function bulk(on) {
     if (!canEdit || !checks || !rows.length) return;
     await flush();                       /* 모아 둔 것을 먼저 보낸다 */
-    const targets = rows.filter(m => isAttExempt(m) || isAttTarget(effAtt(m, attStatus)));
+    const targets = rows.filter(m => !isAttExempt(m) && isAttTarget(effAtt(m, attStatus)));
     if (!targets.length) return;
     if (!on && !confirm(myName + '의 이 날짜 체크를 모두 지울까요?')) return;
     const ids = targets.map(m => m['고유ID']).filter(Boolean);
@@ -7591,11 +7621,22 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
           !isAdmin && !scope && h('p', {
             style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'8px', lineHeight:1.55 }
           }, '한 번 고르시면 이 휴대폰은 다음부터 바로 이 명단이 나옵니다.'),
-          h('p', {
-            style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'6px', lineHeight:1.55 }
-          }, (DEPT_DEFS.map(d => d.name).join('·') || '부서') +
-             ' 학생은 그 부서 명단에만 나옵니다. 한 분을 두 곳에서 체크하는 일이 없도록 한 것입니다. ' +
-             '그 밖의 성도는 모두 자기 구역 명단에 있습니다.')
+          /* ★ 이 구역인데 이 명단에 없는 분 — 이름까지 짚어 준다 */
+          outsiders
+            ? h('div', { className:'note note-info',
+                         style:{ marginTop:'10px', fontSize:'12.5px', lineHeight:1.65 } },
+                h('b', null, outsiders.code + '구역 ' + outsiders.total + '명'),
+                '은 이 명단에 없습니다.',
+                Object.keys(outsiders.byDept).map(k => h(React.Fragment, { key:k }, h('br'),
+                  h('b', null, k + '에서 체크'), ' — ', outsiders.byDept[k].join(', '))),
+                outsiders.baby.length > 0 && h(React.Fragment, null, h('br'),
+                  h('b', null, '영유아는 주일 체크를 하지 않습니다'), ' — ',
+                  outsiders.baby.join(', ')))
+            : h('p', {
+                style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'6px', lineHeight:1.55 }
+              }, (DEPT_DEFS.map(d => d.name).join('·') || '부서') +
+                 ' 학생은 그 부서 명단에서 체크합니다. 영유아는 주일 체크를 하지 않습니다. ' +
+                 '그 밖의 성도는 모두 자기 구역 명단에 있습니다.')
         ),
 
         (!curEvent && !gid)
@@ -9433,7 +9474,9 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
         ' → ③ 자기 구역',
         h('br'),
         h('span', { style:{ fontSize:'12.5px', opacity:.85 } },
-          '그래서 아래 인원을 모두 더하면 정확히 전체 성도 수가 됩니다. 겹치지도, 빠지지도 않습니다.'),
+          '한 분이 두 곳에 들지 않습니다. ',
+          h('b', null, '영유아'), ' 는 주일 체크를 하지 않으므로 아래 어느 명단에도 없습니다 ',
+          '(집계에서는 「영유아」 칸에 전원이 그대로 들어갑니다).'),
         h('br'), h('br'),
         h('b', null, '따로 체크하고 싶은 모임이 있으면'), ' 아래에서 ',
         h('b', null, '별도 명단'), '을 만들어 그분들을 담으세요. ',
