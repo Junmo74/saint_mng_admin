@@ -272,6 +272,15 @@ a{color:inherit}
 .ghead-line{flex:1;height:1px;background:var(--line)}
 /* 한 집이 끝나는 자리에 긋는 줄 — 위 .ghead-line 과 같은 색(--line)·두께다 */
 .fline{height:1px;background:var(--line);margin:1px 2px}
+/* 출석표 [집계] 탭의 구역별 표 — 좁은 기기에서는 옆으로 민다 */
+.taltab{border-collapse:collapse;width:100%;min-width:520px;font-size:13px}
+.taltab th,.taltab td{padding:8px 6px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--border)}
+.taltab thead th{font-size:11.5px;font-weight:800;color:var(--text-3);letter-spacing:-.03em;
+  background:var(--surface-2);position:sticky;top:0}
+.taltab tbody th{text-align:left;font-weight:800;color:var(--text);padding-left:8px}
+.taltab tbody tr{cursor:pointer}
+.taltab tbody tr.on{background:var(--soft)}
+@media (hover:hover){ .taltab tbody tr:hover{background:var(--surface-2)} }
 
 /* ── 입력 ────────────────────────────────────────────── */
 input[type=text],input[type=password],input[type=search],input[type=tel],textarea{
@@ -511,7 +520,7 @@ html[data-theme="dark"] .chip.on{color:#0B1520}
    · 등급 4단계 — 성도 / 임원 / 안내실 / 전도인
      감출 항목은 애초에 그 등급 문서에 담지 않는다 (m_member·m_leader·m_admin·m_master)
    · 심방 메모 (visits) — 전도인 전용, 전도인이 온·오프
-   · 출석 — 출석상태 4가지(정상·주일만·타지역·불참), 명단 묶음(구역·부서·별도),
+   · 출석 — 출석상태 3가지(출석A·출석B·미출석) + 표식 3가지(전입·전출·구원), 명단 묶음(구역·부서·별도),
      주일 출석표, 지정 날짜 모임, 구역·부서·별도별 참석율
    · 가족 연결과 호칭을 안내실이 직접 (조부·조모·손자 …)
    · 다크모드, PWA, 모바일 최적화
@@ -845,7 +854,7 @@ try { if (BUILD === 'admin' && IS_CONFIGURED) document.title = APP_TITLE; } catc
 /* 등급 4단계 — v25에서 '임원'이 성도와 안내실 사이에 들어왔다.
 
    임원(구역장)은 자기 구역 성도의 주일 출석을 체크하고
-   출석상태(정상·주일만·불참)를 직접 고칠 수 있다.
+   출석상태(출석A·출석B·미출석)와 표식(전입·전출·구원)을 직접 고칠 수 있다.
    대신 생년월·비고·심방 메모처럼 민감한 항목은 기본으로 못 본다.
 
    ★ 왜 계정을 하나 더 만들었나
@@ -1060,14 +1069,14 @@ function normVisitCfg(v) {
    주소록 설정 (정식 1.12) — church/config 안의 listCfg
 
    notice     : 인원수 옆에 띄우는 공지·안내 한 줄 (빈 값이면 안 나온다)
-   hideAway   : 타지역을 주소록 목록에서 감춘다
-   hideAbsent : 불참을 주소록 목록에서 감춘다
+   hideAway   : 전출 표식이 달린 분을 주소록 목록에서 감춘다 (1.15까지는 '타지역')
+   hideAbsent : 미출석을 주소록 목록에서 감춘다
    statusEdit : 담당자가 출석상태를 고칠 수 있나 (출석 체크와 별개)
    hidden     : 지금 감출 성도의 고유ID 목록 — 안내실이 저장할 때 만든다
 
    ★ 왜 hidden 목록을 따로 실어 두는가
      성도 화면에는 출석상태가 아예 오지 않는다 (안내실 전용 항목).
-     그래서 성도 기기는 누가 타지역인지 스스로 알 수 없다.
+     그래서 성도 기기는 누가 전출·미출석인지 스스로 알 수 없다.
      안내실이 저장할 때 골라 둔 고유ID 목록을 함께 보내야 성도 화면에서도
      그분들이 빠진다. 임원 이상은 출석상태를 갖고 있으므로 방금 바꾼
      상태가 곧바로 반영된다 (아래 listShows 의 live 참고).
@@ -1095,8 +1104,8 @@ function listShows(m, attStatus, cfg, live) {
   if (!c.hideAway && !c.hideAbsent) return true;
   if (!m) return true;
   if (live) {
-    const a = effAtt(m, attStatus);
-    return !((c.hideAway && a === '타지역') || (c.hideAbsent && a === '불참'));
+    const f = effAttFull(m, attStatus);
+    return !((c.hideAway && f.marks.indexOf('전출') >= 0) || (c.hideAbsent && f.state === '미출석'));
   }
   return c.hidden.indexOf(String(m['고유ID'])) < 0;
 }
@@ -2314,7 +2323,7 @@ async function fbSaveVisitCfg(cfg) {
 
    문서 두 종류뿐이다 — 읽기 횟수를 아끼기 위한 설계다.
 
-   attend/status          { s: { 고유ID: '정상'|'주일만'|'불참' }, updatedAt }
+   attend/status          { s: { 고유ID: '출석A 전입' }, updatedAt }
    attend/w_2026-09-06    { c: { 고유ID: 1 }, updatedAt }   주일 하루치 체크
 
    ★ 610명을 성도별 문서로 두면 접속마다 610번 읽어 무료 한도가 하루도 못 간다.
@@ -2326,7 +2335,23 @@ async function fbSaveVisitCfg(cfg) {
      통째로 덮어쓰지 않기 때문이다.
 ═══════════════════════════════════════════════════════ */
 const ATT_TIMEOUT = 15000;
-const ATT_STATES  = ['정상','주일만','타지역','불참'];
+/* ═══════════════════════════════════════════════════════
+   출석상태 = 「배타 상태 하나」 + 「표식 여럿」   (정식 1.16)
+
+     배타 상태  출석A · 출석B · 미출석      셋 중 ★하나만★
+     표식       전입 · 전출 · 구원          여럿을 함께 달 수 있다
+
+   ★ 전출은 자동으로 미출석이다. 그리고 전입·구원과 함께 달 수 없다.
+     교회를 떠나신 분이므로 다른 표식이 붙을 자리가 없다.
+   ★ 전입·구원은 출석A·출석B·미출석 어디와도 함께 달 수 있다.
+
+   저장은 ★한 칸에 글자 하나★ 로 한다 — 띄어쓰기로 이어 붙인다.
+     '출석A'            '출석B 전입'        '미출석 전출'      '출석A 전입 구원'
+   attend/status 의 지도(s)에도, 엑셀의 「출석상태」 칸에도 같은 글이 들어간다.
+   칸을 늘리지 않으므로 엑셀 서식이 그대로다.
+═══════════════════════════════════════════════════════ */
+const ATT_STATES  = ['출석A','출석B','미출석'];
+const ATT_MARKS   = ['전입','전출','구원'];
 
 function attRef(name) { return _db.collection('attend').doc(name); }
 
@@ -3189,53 +3214,51 @@ function soToneName(m) {
 const getAv = (m, dark) => tone(soToneName(m), dark === undefined ? isDark() : dark);
 
 /* ═══════════════════════════════════════════════════════
-   출석상태 — 네 가지 (v25에서 줄이고, v27에서 타지역을 되살렸다)
+   출석상태 — 옛 값을 새 값으로 옮겨 읽는다 (정식 1.16)
 
-   전 (엑셀에 적혀 있던 값)          →  후
-   ─────────────────────────────────────────
-   정상출석                          →  정상
-   타지역                            →  타지역
-   상·하반기불참 / 상반기불참 …       →  불참
-   상·하반기잠 / 하반기잠 …           →  불참
+   전 (엑셀·attend 에 쌓여 있던 값)      →  후
+   ──────────────────────────────────────────────
+   정상출석 / 정상                        →  출석A
+   주일만                                 →  출석B
+   타지역                                 →  미출석
+   상·하반기불참 / 상반기불참 …            →  미출석
+   상·하반기잠 / 하반기잠 …                →  미출석
 
-   왜 이렇게 정했나
-   ────────────────
-   · '잠적'과 '불참'은 구역장이 실제로 구분하기 어려웠다.
-     둘 다 "안 나오신다"이므로 불참으로 합쳤다.
-   · '타지역'은 v25에서 '주일만'에 합쳤다가 v27에서 되살렸다.
-     타지역에 사시는 분과, 이 지역에 사시면서 주일예배만 나오시는 분은
-     구역장이 챙기는 방식이 전혀 다르기 때문이다.
-     (타지역은 심방을 갈 수 없고, 주일만 나오시는 분은 갈 수 있다)
+   ★ 왜 타지역이 표식이 아니라 미출석인가 (2026-09-12 결정)
+     타지역으로 적어 두신 분들 중에는 실제로 교적을 옮기신 분과
+     그냥 멀리 사시는 분이 섞여 있었다. 전부 전출로 잡으면
+     떠나지 않으신 분까지 전출로 세어진다. 그래서 미출석으로만 옮기고,
+     실제 전출은 교회에서 다시 표식을 달아 주시는 편이 안전하다.
 
-   ★ 참석율 대상(분모)은 '정상 + 주일만'이다.
-     타지역과 불참은 분모에서 빠진다 — 매주 나오실 수 없는 분들을
-     분모에 넣으면 구역장이 실제로 챙기는 인원과 무관한 숫자가 된다.
+   ★ 참석율 대상(분모)은 '출석A + 출석B'다.
+     미출석은 분모에서 빠진다 — 매주 나오실 수 없는 분들을 분모에 넣으면
+     구역장이 실제로 챙기는 인원과 무관한 숫자가 된다.
      대신 그분이 오셔서 체크되면 그 날짜에는 대상과 참석에 함께 들어간다.
 
    ★ 엑셀 값을 고치지 않아도 된다.
-     normAtt() 가 옛 값을 넷 중 하나로 알아서 옮겨 읽는다.
+     parseAtt() 가 옛 값을 알아서 옮겨 읽는다.
      구역장이 화면에서 고친 값은 attend/status 에 따로 쌓이고,
      그 값이 엑셀 값보다 우선한다. 엑셀을 다시 올려도 남는다.
 ═══════════════════════════════════════════════════════ */
-const ATT_TONE = { '정상':'green', '주일만':'amber', '타지역':'orange', '불참':'red' };
+const ATT_TONE  = { '출석A':'green', '출석B':'amber', '미출석':'red' };
+const MARK_TONE = { '전입':'blue',   '전출':'gray',   '구원':'violet' };
 
 /* ═══════════════════════════════════════════════════════
    출석표에 성도를 세우는 순서 (정식 1.15)
 
    ★ 왜 이 순서인가
-   구역장이 주일 아침에 실제로 두드리는 분은 ★정상★ 이다.
-   그런데 이름순으로만 놓으면 정상·불참·타지역이 뒤섞여,
+   구역장이 주일 아침에 실제로 두드리는 분은 ★출석A★ 다.
+   그런데 이름순으로만 놓으면 출석·미출석이 뒤섞여,
    손가락이 오르내리며 「이분은 안 나오시는 분」을 매번 건너뛰어야 했다.
 
    그래서 손이 가는 순서대로 세운다.
-     ① 정상    매주 오시는 분 — 맨 위
-     ② 주일만   주일에만 오시는 분
-     ③ 불참    당분간 나오지 않으시는 분
-     ④ 타지역   멀리 계셔서 오시기 어려운 분 — 맨 아래
+     ① 출석A   매주 오시는 분 — 맨 위
+     ② 출석B   이따금 오시는 분
+     ③ 미출석  당분간 나오지 않으시는 분 — 맨 아래
 
    같은 묶음 안에서는 예전처럼 이름순이다 (sortMembers).
 ═══════════════════════════════════════════════════════ */
-const ATT_SORT = { '정상':0, '주일만':1, '불참':2, '타지역':3 };
+const ATT_SORT = { '출석A':0, '출석B':1, '미출석':2 };
 function attSortKey(st) {
   const v = ATT_SORT[normAtt(st)];
   return v === undefined ? 9 : v;
@@ -3249,32 +3272,66 @@ function sortByAtt(list, attStatus) {
   });
 }
 
-function normAtt(v) {
-  const t = String(v == null ? '' : v).replace(/\s/g, '');
-  if (!t) return '정상';
-  if (ATT_STATES.indexOf(t) >= 0) return t;
-  if (t.indexOf('타지역') >= 0) return '타지역';
-  if (t.indexOf('주일') >= 0)   return '주일만';
-  if (t.indexOf('불참') >= 0)   return '불참';
-  if (t.indexOf('잠') >= 0)     return '불참';   /* 잠적 → 불참 */
-  if (t.indexOf('정상') >= 0)   return '정상';
-  return '정상';
+/* 낱말 하나를 배타 상태로 읽는다. 관계없는 낱말이면 빈 글자를 준다.
+   ★ 보는 순서가 중요하다 — '정상출석' 에는 '출석' 이 들어 있고,
+     '미출석' 에도 '출석' 이 들어 있다. 좁은 쪽부터 본다. */
+function attWordState(t) {
+  if (!t) return '';
+  if (t.indexOf('미출석') >= 0) return '미출석';
+  if (/출석\s*[Aa]/.test(t) || t === 'A' || t === 'a') return '출석A';
+  if (/출석\s*[Bb]/.test(t) || t === 'B' || t === 'b') return '출석B';
+  /* 1.15까지 쓰던 값 */
+  if (t.indexOf('타지역') >= 0) return '미출석';
+  if (t.indexOf('주일')   >= 0) return '출석B';
+  if (t.indexOf('불참')   >= 0) return '미출석';
+  if (t.indexOf('잠')     >= 0) return '미출석';   /* 잠적 → 미출석 */
+  if (t.indexOf('정상')   >= 0) return '출석A';
+  return '';
 }
+
+/* 적힌 글 한 줄 → { state, marks }.
+   띄어쓰기·쉼표·가운뎃점 어느 것으로 나누어 적어도 읽는다. */
+function parseAtt(v) {
+  const words = String(v == null ? '' : v).split(/[\s,，·・\/|;]+/).filter(Boolean);
+  let state = '';
+  const got = {};
+  words.forEach(w => {
+    ATT_MARKS.forEach(k => { if (w.indexOf(k) >= 0) got[k] = 1; });
+    if (!state) { const st = attWordState(w); if (st) state = st; }
+  });
+  /* ★ 전출은 자동으로 미출석이고, 다른 표식과 함께 달 수 없다 */
+  if (got['전출']) return { state:'미출석', marks:['전출'] };
+  return { state: state || '출석A', marks: ATT_MARKS.filter(k => got[k]) };
+}
+
+/* { state, marks } → 저장할 글 한 줄 */
+function attText(state, marks) {
+  const st = ATT_STATES.indexOf(state) >= 0 ? state : '출석A';
+  const mk = (marks || []).filter(k => ATT_MARKS.indexOf(k) >= 0);
+  if (mk.indexOf('전출') >= 0) return '미출석 전출';
+  return [st].concat(ATT_MARKS.filter(k => mk.indexOf(k) >= 0)).join(' ');
+}
+
+function normAtt(v) { return parseAtt(v).state; }
 
 /* 이 성도의 지금 출석상태.
    구역장이 화면에서 고친 값(attend/status)이 엑셀 값보다 앞선다. */
-function effAtt(m, ovr) {
+function effAttFull(m, ovr) {
   const id = m && m['고유ID'];
   const o  = (ovr && id) ? ovr[id] : null;
-  return normAtt(o || (m && m['출석상태']));
+  return parseAtt(o || (m && m['출석상태']));
 }
+function effAtt(m, ovr)   { return effAttFull(m, ovr).state; }
+function effMarks(m, ovr) { return effAttFull(m, ovr).marks; }
+function hasMark(m, ovr, k) { return effAttFull(m, ovr).marks.indexOf(k) >= 0; }
 
-/* 참석율의 분모는 '정상 + 주일만'이다.
-   타지역·불참으로 지정해 둔 분까지 넣으면 구역장이 실제로 챙기는 인원 대비
+/* 참석율의 분모는 '출석A + 출석B'다.
+   미출석으로 지정해 둔 분까지 넣으면 구역장이 실제로 챙기는 인원 대비
    참석율이 아니라 명부 대비 숫자가 되어 매주 낮게만 나온다. */
-function isAttTarget(state) { return state === '정상' || state === '주일만'; }
+function isAttTarget(state) { return state === '출석A' || state === '출석B'; }
 
-const getBadge = (att, dark) => tone(ATT_TONE[normAtt(att)] || 'gray', dark === undefined ? isDark() : dark);
+const getBadge     = (att, dark) => tone(ATT_TONE[normAtt(att)] || 'gray', dark === undefined ? isDark() : dark);
+const getMarkBadge = (mk,  dark) => tone(MARK_TONE[mk] || 'gray', dark === undefined ? isDark() : dark);
 
 const REL_TONE = {
   '남편':'blue','아내':'pink',
@@ -4115,6 +4172,58 @@ function bandFromSe(se) {
   return '';
 }
 
+/* ═══════════════════════════════════════════════════════
+   집계표의 세 무리 — 성인 · 교회학교 · 영유아 (정식 1.16)
+
+   교회에서 쓰시는 집계 서식이 이 셋으로 갈라져 있다.
+   무엇이 어느 무리인지는 ★교회 설정★ 에서 가져온다.
+     영유아   부서 설정의 영유아부(d_baby)에 적힌 소속 — 기본 「유아」
+     교회학교 어린이 무리(bands.kid)에서 영유아를 뺀 것
+     성인     나머지 전부 (봉사회·어머니회·은장회·청년회…)
+   그래서 다른 교회에 드려도 그 교회 소속 이름 그대로 집계된다.
+═══════════════════════════════════════════════════════ */
+const TAL_BABY_SO = (function() {
+  const d = DEPT_DEFS.filter(x => x.id === 'd_baby' || /영유아|영아/.test(x.name))[0];
+  return (d && d.so.length) ? d.so.slice() : ['유아'];
+})();
+const TAL_SCHOOL_SO = FAM_BANDS.kid.so.filter(x => TAL_BABY_SO.indexOf(x) < 0);
+const TAL_BANDS = [
+  { key:'adult',  label:'성인',   icon:'users' },
+  { key:'school', label:'교회학교', icon:'school' },
+  { key:'baby',   label:'영유아',  icon:'mood-kid' }
+];
+function talBand(m) {
+  const so = String((m && m['소속']) || '').trim();
+  if (TAL_BABY_SO.indexOf(so)   >= 0) return 'baby';
+  if (TAL_SCHOOL_SO.indexOf(so) >= 0) return 'school';
+  return 'adult';
+}
+
+/* 한 무리를 훑어 집계 한 벌을 만든다 (출석표 [집계] 탭이 쓴다) */
+function tallyAtt(list, attStatus) {
+  const band = () => ({ ab:0, a:0, b:0, so:{} });
+  const r = {
+    adult:band(), school:band(), baby:band(),
+    absent:0, attended:0, registered:0,
+    marks:{ '전입':0, '전출':0, '구원':0 }
+  };
+  (list || []).forEach(m => {
+    const f  = effAttFull(m, attStatus);
+    const bd = r[talBand(m)];
+    const so = String(m['소속'] || '').trim() || '미지정';
+    r.registered++;
+    f.marks.forEach(k => { r.marks[k]++; });
+    if (f.state === '미출석') { r.absent++; return; }
+    r.attended++;
+    bd.ab++;
+    if (f.state === '출석A') bd.a++; else bd.b++;
+    if (!bd.so[so]) bd.so[so] = { a:0, b:0, ab:0 };
+    bd.so[so].ab++;
+    if (f.state === '출석A') bd.so[so].a++; else bd.so[so].b++;
+  });
+  return r;
+}
+
 function famBand(m) {
   const so = String((m && m['소속']) || '').trim();
   for (const k of BAND_ORDER) if (FAM_BANDS[k].so.indexOf(so) >= 0) return k;
@@ -4535,7 +4644,8 @@ function famReviewPairs(group, fam) {
 }
 
 
-const SO_ORDER = ['봉사회','어머니회','은장회','청년회','대학부','고등부','중등부','초등부','유치부','유아'];
+const SO_ORDER = ['봉사회','어머니회','은장회','은빛장년회','청년회','대학부',
+                  '고등부','중등부','초등부','유년부','유치부','유아'];
 
 /* 직분 정렬 순서. 여기에 없는 직분은 뒤로 밀리고 가나다순으로 놓인다.
    엑셀에 새 직분을 적어도 프로그램을 고칠 필요는 없다. */
@@ -5686,41 +5796,82 @@ function NoteButton({ member }) {
    임원(구역장) 이상이면 세 버튼이 나오고, 성도에게는 배지만 보인다.
    저장은 누른 즉시 attend/status 에 그 한 사람 칸만 쓴다.
 ═══════════════════════════════════════════════════════ */
-const ATT_BTN_TONE = { '정상':'ok', '주일만':'warn', '타지역':'warn', '불참':'bad' };
+const ATT_BTN_TONE  = { '출석A':'ok', '출석B':'warn', '미출석':'bad' };
+const MARK_BTN_TONE = { '전입':'navy', '전출':'bad', '구원':'violet' };
+
+/* 배지 묶음 — 상태 하나 + 달려 있는 표식들 (고치지 못하는 등급에게 보이는 모습) */
+function AttBadges({ value, dark, style }) {
+  const c = parseAtt(value);
+  const b = getBadge(c.state, dark);
+  return h('span', { style:{ display:'inline-flex', flexWrap:'wrap', gap:'5px', ...(style || {}) } },
+    h(Bdg, { t:c.state, bg:b.bg, cl:b.cl }),
+    c.marks.map(k => {
+      const t = getMarkBadge(k, dark);
+      return h(Bdg, { key:k, t:k, bg:t.bg, cl:t.cl });
+    })
+  );
+}
 
 function AttPicker({ value, canEdit, onPick, dark, compact }) {
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState('');
-  const cur = normAtt(value);
+  const cur = parseAtt(value);
+  const out = cur.marks.indexOf('전출') >= 0;   /* 전출 = 미출석에 묶인다 */
 
   if (!canEdit) {
-    const b = getBadge(cur, dark);
     return h('div', { className: compact ? '' : 'irow-v' },
-      h(Bdg, { t:cur, bg:b.bg, cl:b.cl }));
+      h(AttBadges, { value, dark }));
   }
 
-  async function pick(v) {
-    if (busy || v === cur) return;
+  async function send(state, marks) {
+    if (busy) return;
+    const next = attText(state, marks);
+    if (next === attText(cur.state, cur.marks)) return;
     setBusy(true); setErr('');
-    try { await onPick(v); } catch(e) { setErr(fsErrMsg(e)); }
+    try { await onPick(next); } catch(e) { setErr(fsErrMsg(e)); }
     setBusy(false);
   }
 
+  /* 전출이 달려 있으면 상태는 미출석에 묶인다 — 단추를 잠근다 */
+  function pickState(v) { if (!out) send(v, cur.marks); }
+
+  function toggleMark(k) {
+    const on = cur.marks.indexOf(k) >= 0;
+    if (k === '전출') {
+      /* 내리면 미출석은 그대로 두고 표식만 뗀다 */
+      return on ? send('미출석', []) : send('미출석', ['전출']);
+    }
+    /* 전입·구원은 전출과 함께 달 수 없다 — 켜면 전출을 내려 준다 */
+    const base = cur.marks.filter(x => x !== '전출');
+    send(out ? '미출석' : cur.state,
+         on ? base.filter(x => x !== k) : base.concat([k]));
+  }
+
+  const btn = (v, on, click, toneVar, disabled) => h('button', {
+    key:v, type:'button', disabled: busy || disabled,
+    onClick: () => click(v),
+    className: on ? 'on' : '',
+    style:{ fontSize: compact ? '13px' : '14px', padding: compact ? '7px 2px' : '9px 3px',
+            color: on ? 'var(--' + toneVar + ')' : undefined,
+            fontWeight: on ? 800 : 600 }
+  }, v);
+
+  const segStyle = {
+    marginTop: compact ? 0 : '5px', maxWidth: compact ? '100%' : '330px',
+    padding:'3px', gap:'3px', opacity: busy ? .6 : 1
+  };
+
   return h('div', null,
-    h('div', {
-      className:'seg',
-      style:{ marginTop: compact ? 0 : '5px', maxWidth: compact ? '100%' : '330px',
-              padding:'3px', gap:'3px', opacity: busy ? .6 : 1 }
-    },
-      ATT_STATES.map(v => h('button', {
-        key:v, type:'button', disabled:busy,
-        onClick: () => pick(v),
-        className: cur === v ? 'on' : '',
-        style:{ fontSize: compact ? '13px' : '14px', padding: compact ? '7px 2px' : '9px 3px',
-                color: cur === v ? 'var(--' + ATT_BTN_TONE[v] + ')' : undefined,
-                fontWeight: cur === v ? 800 : 600 }
-      }, v))
+    h('div', { className:'seg', style:segStyle },
+      ATT_STATES.map(v => btn(v, cur.state === v, pickState, ATT_BTN_TONE[v], out))
     ),
+    /* ── 표식 — 여럿을 함께 달 수 있다 ── */
+    h('div', { className:'seg', style:{ ...segStyle, marginTop:'6px' } },
+      ATT_MARKS.map(k => btn(k, cur.marks.indexOf(k) >= 0, toggleMark, MARK_BTN_TONE[k], false))
+    ),
+    h('p', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'6px', lineHeight:1.55 } },
+      h('b', null, '전출'), ' 을 켜면 자동으로 ', h('b', null, '미출석'), ' 이 됩니다. ',
+      h('b', null, '전입·구원'), ' 은 출석A·출석B·미출석 어디에나 함께 달 수 있습니다.'),
     err && h('p', { className:'note note-bad', style:{ marginTop:'6px', fontSize:'13px' } }, err)
   );
 }
@@ -5798,15 +5949,19 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
       // 일반 검색어 일치 OR 이름 초성 검색 일치
       if (!hay.includes(s) && !nameChoseong.includes(s)) return false;
     }
-    /* 타지역·불참을 목록에서 감추는 설정 (정식 1.12).
-       ★ 출석 칸으로 직접 '타지역'을 고르셨을 때는 감추지 않는다.
+    /* 전출·미출석을 목록에서 감추는 설정 (정식 1.12).
+       ★ 출석 칸으로 직접 그것을 고르셨을 때는 감추지 않는다.
          찾으려고 고른 것을 감추면 아무것도 안 나와 고장으로 보인다. */
     if (!fAtt && !listShows(m, attStatus, listCfg, seeAtt)) return false;
     if (fGu && m['구역'] !== fGu) return false;
     if (fSo && m['소속'] !== fSo) return false;
     if (fCat && splitRoles(m['직분 카테고리']).indexOf(fCat) === -1) return false;
-    /* 출석 필터는 셋 중 하나와 정확히 맞는지만 본다 (v25) */
-    if (fAtt && effAtt(m, attStatus) !== fAtt) return false;
+    /* 출석 필터 — 출석A·출석B·미출석은 상태와 맞는지, 전입·전출·구원은 표식이 달렸는지 본다 */
+    if (fAtt) {
+      const f = effAttFull(m, attStatus);
+      if (ATT_MARKS.indexOf(fAtt) >= 0) { if (f.marks.indexOf(fAtt) < 0) return false; }
+      else if (f.state !== fAtt) return false;
+    }
     return true;
   }).sort(famSort), [members, search, fGu, fSo, fAtt, fCat, attStatus, listCfg, seeAtt, famSort]);
 
@@ -5860,19 +6015,18 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
   }, [renderedList]);
 
   const stats = useMemo(() => {
-    let normal = 0, sunOnly = 0, away = 0, absent = 0;
+    let aCnt = 0, bCnt = 0, absent = 0;
     members.forEach(m => {
       const a = effAtt(m, attStatus);
-      if (a === '정상')        normal++;
-      else if (a === '주일만') sunOnly++;
-      else if (a === '타지역') away++;
-      else                     absent++;
+      if (a === '출석A')      aCnt++;
+      else if (a === '출석B') bCnt++;
+      else                    absent++;
     });
-    return { total: members.length, normal, sunOnly, away, absent };
+    return { total: members.length, aCnt, bCnt, absent };
   }, [members, attStatus]);
 
   /* 이름 옆의 「식구 N」 — 목록에 함께 보이는 식구만 센다 (정식 1.12).
-     타지역·불참을 감춰 두었는데 여기서 세면 눌러 들어가도
+     전출·미출석을 감춰 두었는데 여기서 세면 눌러 들어가도
      그 사람이 없어 숫자가 맞지 않는다. */
   const famCount = useMemo(() => {
     const shown = members.filter(m => listShows(m, attStatus, listCfg, seeAtt));
@@ -5916,16 +6070,14 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
 
     h('div', { className:'wrap', style:{ paddingTop:'14px' } },
 
-      /* 출석상태를 볼 수 있는 등급(기본: 임원부터)에게만 통계를 보여 준다 */
-      /* 칸이 다섯이라 320px 기기에서는 한 칸이 60px 남짓이다.
-         숫자는 그대로 두고 글자만 조여 다섯 칸이 한 줄에 들어가게 한다. */
-      seeAtt && h('div', { style:{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:'5px', marginBottom:'12px' } },
+      /* 출석상태를 볼 수 있는 등급(기본: 임원부터)에게만 통계를 보여 준다.
+         칸이 넷이라 320px 기기에서도 넉넉하다. 자세한 집계는 출석표 [집계] 탭에 있다. */
+      seeAtt && h('div', { style:{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'5px', marginBottom:'12px' } },
         [
-          { l:'전체',   v:stats.total,   c:'var(--navy)' },
-          { l:'정상',   v:stats.normal,  c:'var(--ok)' },
-          { l:'주일만', v:stats.sunOnly, c:'var(--warn)' },
-          { l:'타지역', v:stats.away,    c:'var(--orange-fg)' },
-          { l:'불참',   v:stats.absent,  c:'var(--bad)' }
+          { l:'전체',   v:stats.total,  c:'var(--navy)' },
+          { l:'출석A',  v:stats.aCnt,   c:'var(--ok)' },
+          { l:'출석B',  v:stats.bCnt,   c:'var(--warn)' },
+          { l:'미출석', v:stats.absent, c:'var(--bad)' }
         ].map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'11px 2px' } },
           h('div', { className:'stat-v', style:{ color:c, fontSize:'20px' } }, v),
           h('div', { className:'stat-l', style:{ fontSize:'11px', letterSpacing:'-.03em' } }, l)
@@ -5965,7 +6117,10 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
         ),
         seeAtt && h('select', { value:fAtt, onChange: e => setFAtt(e.target.value), style:{ flex:1, minWidth:0 } },
           h('option', { value:'' }, '전체 출석'),
-          ATT_STATES.map(a => h('option', { key:a, value:a }, a))
+          h('optgroup', { label:'출석' },
+            ATT_STATES.map(a => h('option', { key:a, value:a }, a))),
+          h('optgroup', { label:'표식' },
+            ATT_MARKS.map(a => h('option', { key:a, value:a }, a)))
         )
       ),
 
@@ -6026,7 +6181,9 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                 list.map((m, mi) => {
                   const jikList = seeJik ? splitRoles(m['직분']) : [];
                   const av    = getAv(m, dark);
-                  const att   = effAtt(m, attStatus);
+                  const full  = effAttFull(m, attStatus);
+                  const att   = full.state;
+                  const marks = full.marks;
                   const badge = getBadge(att, dark);
                   const fc    = famCount[m['고유ID']] || 0;
                   const phone = seePhone ? (m['휴대폰'] || m['집전화']) : '';
@@ -6068,7 +6225,11 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                           className:'mrole-n', title: jikList.join(' / ')
                         }, '+' + (jikList.length - 2)),
                         seeSo && h(Bdg, { t:m['소속'], bg:av.bg, cl:av.cl }),
-                        seeAtt && att !== '정상' && h(Bdg, { t:att, bg:badge.bg, cl:badge.cl }),
+                        seeAtt && att !== '출석A' && h(Bdg, { t:att, bg:badge.bg, cl:badge.cl }),
+                        seeAtt && marks.map(k => {
+                          const t = getMarkBadge(k, dark);
+                          return h(Bdg, { key:k, t:k, bg:t.bg, cl:t.cl });
+                        }),
                         fc > 0 && h('span', {
                           style:{ fontSize:'12.5px', color:'var(--navy)', fontWeight:700,
                                   display:'inline-flex', alignItems:'center', gap:'2px' }
@@ -6344,7 +6505,8 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
                       attStatus, onAttStatus, family: familyCfg, onHome }) {
   const dark   = theme === 'dark';
   const av     = getAv(m, dark);
-  const att    = effAtt(m, attStatus);
+  const attFull = effAttFull(m, attStatus);
+  const att    = attFull.state;
   const badge  = getBadge(att, dark);
   /* ★ 담당자 계정은 자기 명단 성도만 고칠 수 있다 (1.06).
      부서가 구역보다 앞선다 — 11구역에 살아도 청년부에서 체크하는
@@ -6360,7 +6522,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
   /* 세대를 나누려면 나 자신을 포함한 집안 전체가 필요하다.
      ★ 감춘 식구도 이 계산에는 그대로 넣는다.
        빼 버리면 남은 식구의 호칭이 어긋난다 — 예를 들어 아버지가
-       타지역이라 빠졌는데 그 아버지를 계산에서도 빼면
+       미출석이라 빠졌는데 그 아버지를 계산에서도 빼면
        조부모와 손자녀가 부모·자녀처럼 붙어 버린다. */
   const famGroup = useMemo(() => [m].concat(familyAll), [m, familyAll]);
   /* ★ 화면에 낼 식구 — 주소록 목록과 똑같은 기준으로 감춘다 (정식 1.12).
@@ -6396,7 +6558,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
     '휴대폰':   m['휴대폰'],
     '주소':    m['주소'],
     '지역':    m['지역'],
-    '출석상태': att,
+    '출석상태': attText(att, attFull.marks),
     '비고':    m['비고']
   };
 
@@ -6478,7 +6640,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
                         background:'rgba(255,255,255,.18)', border:'1px solid rgba(255,255,255,.26)' }
               }, m['구역'] + '구역'),
               see('소속')    && h(Bdg, { t:m['소속'], bg:av.bg, cl:av.cl }),
-              see('출석상태') && h(Bdg, { t:att, bg:badge.bg, cl:badge.cl })
+              see('출석상태') && h(AttBadges, { value: attText(att, attFull.marks), dark })
             )
           )
         ),
@@ -6518,8 +6680,9 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
           const rel  = getRelLabel(m, fam, familyCfg, famGroup);
           const rc   = getRelTone(rel, dark);
           const fav  = getAv(fam, dark);
-          const fatt = effAtt(fam, attStatus);
-          const fbdg = getBadge(fatt, dark);
+          const ffull = effAttFull(fam, attStatus);
+          const fatt  = ffull.state;
+          const fbdg  = getBadge(fatt, dark);
           const fph  = (see('휴대폰') || see('집전화')) ? (fam['휴대폰'] || fam['집전화']) : '';
           return h('div', {
             key: fam['고유ID'],
@@ -6549,7 +6712,11 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
                    40~110px뿐인데, 세부 직분은 '(청)믿음부 서기'처럼 길다.
                    눌러서 들어가면 상세 화면에 전부 있다. */
                 see('소속') && h(Bdg, { t:fam['소속'], bg:fav.bg, cl:fav.cl }),
-                see('출석상태') && fatt !== '정상' && h(Bdg, { t:fatt, bg:fbdg.bg, cl:fbdg.cl })
+                see('출석상태') && fatt !== '출석A' && h(Bdg, { t:fatt, bg:fbdg.bg, cl:fbdg.cl }),
+                see('출석상태') && ffull.marks.map(k => {
+                  const t = getMarkBadge(k, dark);
+                  return h(Bdg, { key:k, t:k, bg:t.bg, cl:t.cl });
+                })
               )
             ),
             h(CallActions, { phone: fph }),
@@ -6588,7 +6755,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
               : lbl === '출석상태'
               ? h('div', null,
                   h(AttPicker, {
-                    value: att, canEdit: canEditAtt, dark,
+                    value: attText(att, attFull.marks), canEdit: canEditAtt, dark,
                     onPick: v => onAttStatus(m['고유ID'], v)
                   }),
                   canEditAtt && h('p', {
@@ -6669,6 +6836,8 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   const [err,    setErr]    = useState('');
   const [metaErr, setMetaErr] = useState('');
   const [tab,    setTab]    = useState('check');
+  /* [집계] 탭에서 보고 있는 범위 — '' 은 교회 전체, 아니면 구역(명단) id */
+  const [talGid, setTalGid] = useState('');
   const [openId, setOpenId] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [saveState, setSaveState] = useState('idle');   /* idle | pending | saving | saved */
@@ -6784,16 +6953,15 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
        그래서 전체는 성도 목록을 한 번만 훑어 따로 구한다. */
   const stats = useMemo(() => {
     const calc = list => {
-      const r = { total:0, target:0, come:0, absent:0, sunOnly:0, away:0, normal:0 };
+      const r = { total:0, target:0, come:0, absent:0, aCnt:0, bCnt:0 };
       list.forEach(m => {
         const st = effAtt(m, attStatus);
         const on = !!(checks && checks[m['고유ID']]);
         r.total++;
-        if (st === '정상')   r.normal++;
-        if (st === '주일만') r.sunOnly++;
-        if (st === '타지역') r.away++;
-        if (st === '불참')   r.absent++;
-        /* 타지역·불참으로 두었던 분이 오랜만에 나오셔서 체크가 되면
+        if (st === '출석A')  r.aCnt++;
+        if (st === '출석B')  r.bCnt++;
+        if (st === '미출석') r.absent++;
+        /* 미출석으로 두었던 분이 오랜만에 나오셔서 체크가 되면
            그 주에는 대상과 참석에 함께 넣는다. 그래야 참석율이 100%를
            넘지 않고, 돌아오신 분이 숫자에서 사라지지도 않는다. */
         if (isAttTarget(st) || on) { r.target++; if (on) r.come++; }
@@ -6812,6 +6980,54 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
       mine:  calc(rows)
     };
   }, [members, groupList, statList, rows, attStatus, checks, scope && scope.gid]);
+
+  /* ═══ [집계] 탭 ═══════════════════════════════════════════
+     주일 체크(그 날짜에 오셨나)와는 다른 숫자다.
+     여기 나오는 것은 ★지금 등록되어 있는 출석상태★ 의 집계다 —
+     교회에서 쓰시는 집계 서식(성인·교회학교·영유아 / 미출석 / 전입·전출·구원)
+     을 그대로 화면에 옮겨 놓은 것이다.
+
+     ★ 여기서 말하는 구역은 ★엑셀의 「구역」 칸★ 이다 (참석율 탭의
+       통계 묶음이 아니다). 교적 집계이므로 그 구역에 사시는 교회학교
+       학생·영유아도 그 구역 숫자에 함께 들어가야 서식의 칸이 채워진다.
+       (참석율 탭은 '누가 누구를 체크하는가' 라서 기준이 다르다 — 그쪽은
+        아이들이 부서에서 체크되므로 구역 숫자에 넣지 않는다.)
+
+     ★ 담당자 계정으로 들어오시면 콤보 없이 자기 범위로 굳는다.
+       구역 담당자는 그 구역, 부서 담당자는 그 부서 인원만 집계한다. */
+  const talGus = useMemo(() => {
+    const set = {};
+    members.forEach(m => { set[String(m['구역'] || '').trim() || '미지정'] = 1; });
+    return Object.keys(set).sort((a, b) =>
+      (parseInt(a, 10) || 9999) - (parseInt(b, 10) || 9999) || a.localeCompare(b, 'ko'));
+  }, [members]);
+
+  const talDept  = !!(scope && scope.kind === 'dept');
+  const talPicked = scope ? (talDept ? '' : scope.code) : talGid;
+  const talList = useMemo(() => {
+    if (talDept)    return members.filter(m => scopeAllows(scope, m));
+    if (!talPicked) return members;
+    return members.filter(m => (String(m['구역'] || '').trim() || '미지정') === talPicked);
+  }, [members, talPicked, talDept, scope && scope.gid]);
+  const talName = talDept ? (scope.name || '내 부서')
+                : talPicked ? (talPicked === '미지정' ? '구역 미지정' : talPicked + '구역')
+                : '교회 전체';
+
+  const tal = useMemo(() => tallyAtt(talList, attStatus), [talList, attStatus]);
+  /* 구역별 한 줄 요약 — 전체를 보고 계실 때도 늘 함께 둔다 */
+  const talRows = useMemo(() => scope ? [] :
+    talGus.map(g => ({
+      id: g,
+      name: g === '미지정' ? '미지정' : g + '구역',
+      t: tallyAtt(members.filter(m => (String(m['구역'] || '').trim() || '미지정') === g), attStatus)
+    })),
+    [talGus, members, attStatus, scope]);
+
+  /* 소속을 교회에서 정하신 차례로 */
+  const soSort = (a, b) => {
+    const ia = SO_ORDER.indexOf(a), ib = SO_ORDER.indexOf(b);
+    return ((ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)) || a.localeCompare(b, 'ko');
+  };
 
   /* 구역 통계에 함께 드는 부서가 있는지 — 안내 문구를 낼지 정한다 */
   const inGuDepts = useMemo(() =>
@@ -6999,7 +7215,8 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
       style:{ background:'var(--surface)', borderBottom:'1px solid var(--border)', display:'flex',
               position:'sticky', top:'calc(var(--bar-h) + env(safe-area-inset-top))', zIndex:20 }
     },
-      [['check','출석 체크','checkbox'], ['stat','참석율','chart-bar']].map(([id, lbl, ic]) =>
+      [['check','출석 체크','checkbox'], ['stat','참석율','chart-bar'],
+       ['tally','집계','report-analytics']].map(([id, lbl, ic]) =>
         h('button', {
           key:id, type:'button', onClick: () => { flush(); setTab(id); },
           style:{ flex:1, padding:'12px 6px 10px', border:'none', background:'transparent',
@@ -7017,8 +7234,10 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
         h('div', { style:{ marginTop:'6px', fontSize:'12.5px', opacity:.85 } },
           '보안 규칙에 ', h('b', null, 'attend'), ' 항목이 있는지 확인하세요.')),
 
-      /* ── 날짜 고르기 ─────────────────────────────────── */
-      h(Card, null,
+      /* ── 날짜 고르기 ───────────────────────────────────
+         ★ [집계] 탭에서는 감춘다 — 집계는 지금 등록된 출석상태를 세는 것이라
+           고른 주일과 아무 상관이 없다. 남겨 두면 「이 주일의 집계」로 오해하신다. */
+      tab !== 'tally' && h(Card, null,
         h('div', { style:{ display:'flex', alignItems:'center', gap:'8px' } },
           h('button', {
             type:'button', className:'act', onClick: () => shiftWeek(-1),
@@ -7148,7 +7367,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
               bar(myStat.come, myStat.target, 'var(--navy)'),
               /* ★ 참석은 「몇 명 중 몇 명」 을 한 줄로 크게 보여 준다 (정식 1.12).
                    50/59 처럼 나와서 눈에 바로 들어온다.
-                   뒷숫자 59 는 정상 + 주일만 (참석율의 분모)이다.
+                   뒷숫자 59 는 출석A + 출석B (참석율의 분모)이다.
 
                  ★ 왜 한 줄을 다 쓰나
                    다섯 칸에 나란히 넣으면 320px 기기에서 한 칸이 44px 뿐이라
@@ -7165,12 +7384,11 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                                       letterSpacing:'-.03em' } }, '/' + myStat.target))
               ),
               h('div', {
-                style:{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'5px', marginTop:'5px' }
+                style:{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'5px', marginTop:'5px' }
               },
-                [ { l:'정상',   v:myStat.normal,  c:'var(--navy)' },
-                  { l:'주일만', v:myStat.sunOnly, c:'var(--warn)' },
-                  { l:'타지역', v:myStat.away,    c:'var(--orange-fg)' },
-                  { l:'불참',   v:myStat.absent,  c:'var(--bad)' }
+                [ { l:'출석A',  v:myStat.aCnt,   c:'var(--navy)' },
+                  { l:'출석B',  v:myStat.bCnt,   c:'var(--warn)' },
+                  { l:'미출석', v:myStat.absent, c:'var(--bad)' }
                 ].map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'10px 2px' } },
                   h('div', { className:'stat-v',
                              style:{ color:c, fontSize:'19px', whiteSpace:'nowrap' } }, v),
@@ -7179,8 +7397,8 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
               ),
               h('p', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.5 } },
                 '참석 ', h('b', null, myStat.come + '/' + myStat.target),
-                ' 은 ', h('b', null, '그날 오실 분(정상 + 주일만) 중 몇 분이 오셨는지'), ' 입니다. ',
-                '타지역·불참으로 지정하신 분은 뒷숫자에서 빠지고, 그분이 오셔서 체크되면 그 날짜에만 뒷숫자에 함께 들어갑니다.'),
+                ' 은 ', h('b', null, '그날 오실 분(출석A + 출석B) 중 몇 분이 오셨는지'), ' 입니다. ',
+                '미출석으로 지정하신 분은 뒷숫자에서 빠지고, 그분이 오셔서 체크되면 그 날짜에만 뒷숫자에 함께 들어갑니다.'),
               canEdit && h('div', { style:{ display:'flex', gap:'8px', marginTop:'12px' } },
                 h('button', {
                   type:'button', onClick: () => bulk(true), disabled: bulkBusy || !checks,
@@ -7208,10 +7426,11 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                 : h('div', { className:'card', style:{ padding:0, overflow:'hidden' } },
                     rows.map((m, i) => {
                       const id  = m['고유ID'];
-                      const st  = effAtt(m, attStatus);
+                      const fl  = effAttFull(m, attStatus);
+                      const st  = fl.state;
                       const bg  = getBadge(st, dark);
                       const on  = !!(checks && checks[id]);
-                      const off = st === '불참';
+                      const off = st === '미출석';
                       /* 상태가 바뀌는 자리에 작은 머리글을 끼운다 —
                          「왜 이 순서인가」를 굳이 설명하지 않아도 알 수 있다. */
                       const head = attGroups.many &&
@@ -7294,7 +7513,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                                     padding:'10px 0 4px' }
                           }, m['이름'] + ' 님의 출석상태'),
                           h(AttPicker, {
-                            value: st, canEdit: true, dark, compact: true,
+                            value: attText(st, fl.marks), canEdit: true, dark, compact: true,
                             /* ★ 바꾸고 나면 이 칸을 닫는다 (정식 1.15)
                                상태가 바뀌면 그 성도의 줄이 다른 묶음으로 옮겨 간다.
                                펼친 칸을 그대로 두면 손가락 아래에서 화면이 출렁인다. */
@@ -7302,7 +7521,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                           }),
                           h('p', {
                             style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'7px', lineHeight:1.5 }
-                          }, '바꾸시면 ', h('b', null, '정상 → 주일만 → 불참 → 타지역'),
+                          }, '바꾸시면 ', h('b', null, '출석A → 출석B → 미출석'),
                              ' 순서로 줄이 다시 세워집니다. 엑셀을 다시 올려도 유지됩니다.')
                         )
                       );
@@ -7352,12 +7571,11 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                                         letterSpacing:'-.03em' } }, '/' + stats.sum.target))
                 ),
                 h('div', {
-                  style:{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'5px', marginTop:'5px' }
+                  style:{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'5px', marginTop:'5px' }
                 },
-                  [ { l:'정상',   v:stats.sum.normal,  c:'var(--navy)' },
-                    { l:'주일만', v:stats.sum.sunOnly, c:'var(--warn)' },
-                    { l:'타지역', v:stats.sum.away,    c:'var(--orange-fg)' },
-                    { l:'불참',   v:stats.sum.absent,  c:'var(--bad)' }
+                  [ { l:'출석A',  v:stats.sum.aCnt,   c:'var(--navy)' },
+                    { l:'출석B',  v:stats.sum.bCnt,   c:'var(--warn)' },
+                    { l:'미출석', v:stats.sum.absent, c:'var(--bad)' }
                   ].map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'10px 2px' } },
                     h('div', { className:'stat-v',
                                style:{ color:c, fontSize:'19px', whiteSpace:'nowrap' } }, v),
@@ -7404,6 +7622,152 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                 )
               )
             )
+      ),
+
+      /* ═══ 집계 탭 (정식 1.16) ═══════════════════════════════
+         교회에서 쓰시는 집계 서식을 그대로 화면에 옮긴 것이다.
+           성인   출석A+B · 출석A · 출석B · 소속별 출석A
+           교회학교 총원 · 부서별
+           영유아  총원
+           미출석 · 전입 · 전출 · 구원
+         맨 아래에 「등록인원 = 총출석인원 + 미출석」 이 맞는지 한눈에 보인다. */
+      tab === 'tally' && h(React.Fragment, null,
+
+        /* ── 범위 고르기 ── */
+        h(Card, null,
+          h(SLabel, { icon:'filter', text:'집계 범위' }),
+          scope
+            ? h('p', { style:{ fontSize:'14.5px', color:'var(--text-2)', lineHeight:1.7 } },
+                h('b', null, scope.name), ' 만 집계합니다.')
+            : h('select', {
+                value: talGid, onChange: e => setTalGid(e.target.value),
+                style:{ fontSize:'16px', fontWeight:700, textAlign:'center' }
+              },
+                h('option', { value:'' }, '교회 전체'),
+                talGus.map(g => h('option', { key:g, value:g },
+                  g === '미지정' ? '구역 미지정' : g + '구역'))
+              ),
+          h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'8px', lineHeight:1.6 } },
+            '주일 출석 체크와는 다른 숫자입니다. 여기 나오는 것은 ',
+            h('b', null, '지금 등록되어 있는 출석상태'), ' 를 센 것입니다. ',
+            '구역은 ', h('b', null, '엑셀의 「구역」 칸'), ' 기준이라 그 구역의 교회학교·영유아도 함께 들어갑니다.')
+        ),
+
+        /* ── 한눈에 ── */
+        h(Card, null,
+          h(SLabel, { icon:'sum', text: talName + ' \u2014 총집계' }),
+          h('div', { style:{ display:'flex', alignItems:'baseline', gap:'8px', marginBottom:'10px' } },
+            h('span', { style:{ fontSize:'42px', fontWeight:800, color:'var(--navy)',
+                                letterSpacing:'-.04em', lineHeight:1 } }, tal.attended),
+            h('span', { style:{ fontSize:'15px', color:'var(--text-2)', fontWeight:700 } },
+              '/ 등록 ' + tal.registered + '명')
+          ),
+          bar(tal.attended, tal.registered, 'var(--navy)'),
+          h('div', { style:{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'5px', marginTop:'12px' } },
+            [ { l:'총출석인원', v:tal.attended,   c:'var(--ok)' },
+              { l:'미출석',    v:tal.absent,     c:'var(--bad)' },
+              { l:'등록인원',   v:tal.registered, c:'var(--navy)' }
+            ].map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'11px 2px' } },
+              h('div', { className:'stat-v', style:{ color:c, fontSize:'21px' } }, v),
+              h('div', { className:'stat-l', style:{ fontSize:'11.5px', letterSpacing:'-.03em' } }, l)
+            ))
+          ),
+          h('p', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.6 } },
+            h('b', null, '등록인원 = 총출석인원 + 미출석'), ' 입니다. ',
+            '총출석인원은 성인 · 교회학교 · 영유아를 모두 더한 수입니다.')
+        ),
+
+        /* ── 무리별 ── */
+        TAL_BANDS.map(({ key, label, icon }) => {
+          const b   = tal[key];
+          const sos = Object.keys(b.so).sort(soSort);
+          if (!b.ab && !sos.length) return null;
+          const byA = (key === 'adult');      /* 성인 칸은 교회 서식대로 출석A 를 센다 */
+          return h(Card, { key },
+            h(SLabel, { icon, text: label }),
+            h('div', { style:{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'5px' } },
+              [ { l:'출석A+B', v:b.ab, c:'var(--navy)' },
+                { l:'출석A',   v:b.a,  c:'var(--ok)' },
+                { l:'출석B',   v:b.b,  c:'var(--warn)' }
+              ].map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'11px 2px' } },
+                h('div', { className:'stat-v', style:{ color:c, fontSize:'20px' } }, v),
+                h('div', { className:'stat-l', style:{ fontSize:'11.5px', letterSpacing:'-.03em' } }, l)
+              ))
+            ),
+            sos.length > 0 && h('div', {
+              style:{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(74px,1fr))',
+                      gap:'5px', marginTop:'6px' }
+            },
+              sos.map(so => {
+                const x = b.so[so];
+                return h('div', { key:so, className:'stat', style:{ padding:'10px 2px' } },
+                  h('div', { className:'stat-v', style:{ color:'var(--text)', fontSize:'18px' } },
+                    byA ? x.a : x.ab),
+                  h('div', { className:'stat-l', style:{ fontSize:'11px', letterSpacing:'-.04em' } },
+                    so + (byA ? 'A' : '')),
+                  (byA && x.b > 0) && h('div', {
+                    style:{ fontSize:'10.5px', color:'var(--warn)', fontWeight:700, marginTop:'1px' }
+                  }, 'B ' + x.b)
+                );
+              })
+            ),
+            byA && h('p', { style:{ fontSize:'11.5px', color:'var(--text-3)', marginTop:'8px', lineHeight:1.55 } },
+              '소속 칸은 ', h('b', null, '출석A'), ' 인원입니다 \u2014 모두 더하면 위 출석A 와 같습니다. ',
+              '출석B 가 있는 소속에는 아래에 따로 적었습니다.')
+          );
+        }),
+
+        /* ── 표식 ── */
+        h(Card, null,
+          h(SLabel, { icon:'bookmark', text:'전입 · 전출 · 구원' }),
+          h('div', { style:{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'5px' } },
+            [ { l:'전입', v:tal.marks['전입'], c:'var(--navy)' },
+              { l:'전출', v:tal.marks['전출'], c:'var(--bad)' },
+              { l:'구원', v:tal.marks['구원'], c:'var(--violet)' }
+            ].map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'11px 2px' } },
+              h('div', { className:'stat-v', style:{ color:c, fontSize:'21px' } }, v),
+              h('div', { className:'stat-l', style:{ fontSize:'11.5px', letterSpacing:'-.03em' } }, l)
+            ))
+          ),
+          h('p', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.6 } },
+            h('b', null, '전출'), ' 은 자동으로 미출석이므로 위 미출석 안에 함께 들어 있습니다. ',
+            h('b', null, '전입 · 구원'), ' 은 출석A · 출석B · 미출석 어디에나 달려 있을 수 있습니다.')
+        ),
+
+        /* ── 구역별 한 줄씩 ── */
+        talRows.length > 0 && h(Card, null,
+          h(SLabel, { icon:'users-group', text:'구역별 집계' }),
+          h('div', { style:{ overflowX:'auto', margin:'0 -4px' } },
+            h('table', { className:'taltab' },
+              h('thead', null,
+                h('tr', null,
+                  ['구역','출석','성인','교회학교','영유아','미출석','전입','전출','구원']
+                    .map(t => h('th', { key:t }, t))
+                )
+              ),
+              h('tbody', null,
+                talRows.map(r => h('tr', {
+                  key: r.id,
+                  className: r.id === talPicked ? 'on' : '',
+                  onClick: () => { if (!scope) setTalGid(r.id === talGid ? '' : r.id); }
+                },
+                  h('th', null, r.name),
+                  h('td', { style:{ fontWeight:800, color:'var(--navy)' } }, r.t.attended),
+                  h('td', null, r.t.adult.ab),
+                  h('td', null, r.t.school.ab),
+                  h('td', null, r.t.baby.ab),
+                  h('td', { style:{ color:'var(--bad)' } }, r.t.absent),
+                  h('td', null, r.t.marks['전입']),
+                  h('td', null, r.t.marks['전출']),
+                  h('td', null, r.t.marks['구원'])
+                ))
+              )
+            )
+          ),
+          h('p', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'10px', lineHeight:1.6 } },
+            '줄을 누르시면 그 구역만 위에서 자세히 보실 수 있습니다. ',
+            '한 분은 한 구역에만 들어가므로, 구역을 모두 더하면 교회 전체와 같습니다.')
+        )
       )
     )
   );
@@ -8418,18 +8782,19 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
   }, [members]);
 
   const stat = useMemo(() => {
-    let normal = 0, sunOnly = 0, away = 0, absent = 0;
+    let aCnt = 0, bCnt = 0, absent = 0;
+    const mk = { '전입':0, '전출':0, '구원':0 };
     members.forEach(m => {
-      const a = effAtt(m, attStatus);
-      if (a === '정상')        normal++;
-      else if (a === '주일만') sunOnly++;
-      else if (a === '타지역') away++;
-      else                     absent++;
+      const f = effAttFull(m, attStatus);
+      if (f.state === '출석A')      aCnt++;
+      else if (f.state === '출석B') bCnt++;
+      else                          absent++;
+      f.marks.forEach(k => { mk[k]++; });
     });
     const ids = new Set(members.map(m => m['고유ID']));
     const keys = Object.keys(attStatus || {});
     return {
-      normal, sunOnly, away, absent,
+      aCnt, bCnt, absent, mk,
       manual: keys.length,
       orphans: keys.filter(k => !ids.has(k))
     };
@@ -8587,11 +8952,13 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
       const id = m['고유ID'];
       if (!id) return;
       if (attStatus && attStatus[id]) return;      /* 손으로 고친 값은 유지 */
-      todo[id] = normAtt(m['출석상태']);
+      const f = parseAtt(m['출석상태']);
+      todo[id] = attText(f.state, f.marks);
     });
     const n = Object.keys(todo).length;
     if (!n) { setMsg('ok:정리할 것이 없습니다. 이미 모두 정리되어 있습니다.'); return; }
-    if (!confirm(n + '명의 출석상태를 정상·주일만·불참 세 가지로 정리해 저장할까요?\n\n'
+    if (!confirm(n + '명의 출석상태를 출석A·출석B·미출석 세 가지로 정리해 저장할까요?\n\n'
+               + '옛 표기(정상→출석A, 주일만→출석B, 타지역·불참→미출석)가 함께 정리됩니다.\n'
                + '구역장이 이미 손으로 고쳐 둔 값은 그대로 둡니다.')) return;
     setBusy(true); setMsg('');
     try {
@@ -8663,7 +9030,8 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
           '체크명단': gidName[gidv] || '',
           '통계명단': (statList.find(x => x.id === sidv) || {}).name || '',
           '구역': m['구역'] || '', '소속': m['소속'] || '',
-          '고유ID': m['고유ID'] || '', '출석상태': effAtt(m, attStatus)
+          '고유ID': m['고유ID'] || '',
+          '출석상태': (function(){ const f = effAttFull(m, attStatus); return attText(f.state, f.marks); })()
         };
         weeks.slice().reverse().forEach(wk => {
           o[weekLabel(wk)] = (data['w_' + wk] && data['w_' + wk][m['고유ID']]) ? 'O' : '';
@@ -9054,15 +9422,24 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
     !evOnly && h(Card, null,
       h(SLabel, { icon:'chart-pie', text:'출석상태 현황' }),
       h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginBottom:'10px', lineHeight:1.6 } },
-        '담당자가 출석상태를 못 고치게 잠그거나, 타지역·불참을 주소록 목록에서 빼시려면 ',
-        h('b', null, '[표시 설정] 탭 → 주소록 설정'), ' 에서 하실 수 있습니다.'),
-      h('div', { style:{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'7px' } },
-        [ { l:'정상',   v:stat.normal,  c:'var(--ok)' },
-          { l:'주일만', v:stat.sunOnly, c:'var(--warn)' },
-          { l:'타지역', v:stat.away,    c:'var(--orange-fg)' },
-          { l:'불참',   v:stat.absent,  c:'var(--bad)' }
+        '담당자가 출석상태를 못 고치게 잠그거나, 전출·미출석을 주소록 목록에서 빼시려면 ',
+        h('b', null, '[표시 설정] 탭 → 주소록 설정'), ' 에서 하실 수 있습니다. ',
+        '무리별·구역별 집계는 ', h('b', null, '출석표 화면 → [집계] 탭'), ' 에 있습니다.'),
+      h('div', { style:{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'7px' } },
+        [ { l:'출석A',  v:stat.aCnt,   c:'var(--ok)' },
+          { l:'출석B',  v:stat.bCnt,   c:'var(--warn)' },
+          { l:'미출석', v:stat.absent, c:'var(--bad)' }
         ].map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'12px 3px' } },
           h('div', { className:'stat-v', style:{ color:c, fontSize:'21px' } }, v),
+          h('div', { className:'stat-l', style:{ fontSize:'11.5px', letterSpacing:'-.03em' } }, l)
+        ))
+      ),
+      h('div', { style:{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'7px', marginTop:'7px' } },
+        [ { l:'전입', v:stat.mk['전입'], c:'var(--navy)' },
+          { l:'전출', v:stat.mk['전출'], c:'var(--bad)' },
+          { l:'구원', v:stat.mk['구원'], c:'var(--violet)' }
+        ].map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'10px 3px' } },
+          h('div', { className:'stat-v', style:{ color:c, fontSize:'19px' } }, v),
           h('div', { className:'stat-l', style:{ fontSize:'11.5px', letterSpacing:'-.03em' } }, l)
         ))
       ),
@@ -9070,7 +9447,7 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
         '구역장이 화면에서 손으로 고친 값: ', h('b', null, stat.manual + '건'), h('br'),
         h('span', { style:{ fontSize:'12.5px', color:'var(--text-3)' } },
           '고친 값이 없는 성도는 엑셀의 「출석상태」 칸을 그대로 씁니다. ',
-          '옛 표기(타지역·잠적 등)는 자동으로 세 가지 중 하나로 옮겨 읽습니다.')),
+          '옛 표기(정상·주일만·타지역·잠적 등)는 자동으로 출석A·출석B·미출석으로 옮겨 읽습니다.')),
 
       stat.orphans.length > 0
         ? h('div', { className:'note note-warn', style:{ marginTop:'12px' } },
@@ -9097,8 +9474,8 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
         }, h('i', { className:'ti ti-wand', style:{ fontSize:'17px' } }), '옛 표기 정리')
       ),
       h('p', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'8px', lineHeight:1.6 } },
-        '[옛 표기 정리] 는 엑셀에 남아 있는 「타지역·잠적·상하반기불참」 같은 값을 ',
-        '세 가지 중 하나로 옮겨 ', h('b', null, 'attend'), ' 에 저장해 둡니다. ',
+        '[옛 표기 정리] 는 엑셀에 남아 있는 「정상·주일만·타지역·잠적·상하반기불참」 같은 값을 ',
+        '출석A·출석B·미출석으로 옮겨 ', h('b', null, 'attend'), ' 에 저장해 둡니다. ',
         '한 번 눌러 두시면 엑셀을 다시 올려도 정리된 상태가 유지됩니다. ',
         '이미 구역장이 손으로 고쳐 둔 값은 건드리지 않습니다.'),
       note(msg)
@@ -9773,8 +10150,8 @@ function ListCfgAdmin({ members, attStatus, cfg, onCfgUpdate }) {
   const hideIds = useMemo(() => {
     if (!c.hideAway && !c.hideAbsent) return [];
     return members.filter(m => {
-      const a = effAtt(m, attStatus);
-      return (c.hideAway && a === '타지역') || (c.hideAbsent && a === '불참');
+      const f = effAttFull(m, attStatus);
+      return (c.hideAway && f.marks.indexOf('전출') >= 0) || (c.hideAbsent && f.state === '미출석');
     }).map(m => String(m['고유ID']));
   }, [members, attStatus, c.hideAway, c.hideAbsent]);
 
@@ -9841,8 +10218,8 @@ function ListCfgAdmin({ members, attStatus, cfg, onCfgUpdate }) {
     h('div', { style:{ height:'1px', background:'var(--border)', margin:'16px 0' } }),
 
     /* ── 목록에서 감추기 ── */
-    row('타지역 성도', 'hideAway', '목록에서 제외', '목록에 포함'),
-    row('불참 성도',   'hideAbsent', '목록에서 제외', '목록에 포함',
+    row('전출 성도',   'hideAway', '목록에서 제외', '목록에 포함'),
+    row('미출석 성도', 'hideAbsent', '목록에서 제외', '목록에 포함',
         '감추는 것은 주소록 목록뿐입니다. 출석표와 출석상태 화면에는 그대로 나오고, 자료도 지워지지 않습니다.'),
 
     (c.hideAway || c.hideAbsent) && h('div', {
@@ -9859,7 +10236,7 @@ function ListCfgAdmin({ members, attStatus, cfg, onCfgUpdate }) {
     /* ── 출석상태 고치기 잠금 ── */
     row('담당자의 출석상태 설정', 'statusEdit', '사용함', '잠금',
         c.statusEdit
-          ? '구역장·부서 담당자가 출석표와 성도 화면에서 출석상태(정상·주일만·타지역·불참)를 고칠 수 있습니다.'
+          ? '구역장·부서 담당자가 출석표와 성도 화면에서 출석상태(출석A·출석B·미출석)와 표식(전입·전출·구원)을 고칠 수 있습니다.'
           : '출석 체크는 그대로 되고, 출석상태만 고칠 수 없습니다. 한 번 정리해 두셨으면 잠가 두시면 실수로 바뀌지 않습니다. (전도인은 언제나 고칠 수 있습니다)'),
 
     h('button', {
@@ -10878,7 +11255,7 @@ const COL_HELP = [
   ['부가','구원년월','1980.05'],
   ['부가','집전화','063-123-4567'],
   ['부가','지역','나운동 · 수송동'],
-  ['부가','출석상태','정상 · 주일만 · 타지역 · 불참. 비우면 정상입니다.'],
+  ['부가','출석상태','출석A · 출석B · 미출석 중 하나. 뒤에 띄우고 전입 · 전출 · 구원을 함께 적을 수 있습니다 (예: 출석B 전입). 비우면 출석A입니다.'],
   ['부가','비고','기본은 안내실·전도인만 봅니다. ★ 심방 메모를 여기 적지 마세요 — 다시 올리면 사라집니다.'],
   ['자동','고유ID','★ 비워 두세요. 프로그램이 만듭니다. 사진·심방메모·출석이 이 값으로 성도를 찾습니다.'],
   ['자동','가족코드','★ 비워 두세요. 프로그램이 만듭니다.'],
