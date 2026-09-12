@@ -1684,6 +1684,29 @@ const REL_PRESETS = [
   '사위','며느리','시부','시모','장인','장모','삼촌','이모','고모','조카','가족'
 ];
 
+/* ═══════════════════════════════════════════════════════
+   안내실이 성도 화면에서 바로 고칠 수 있는 항목 (정식 1.16)
+
+   ★ 왜 이 다섯뿐인가
+   자주 바뀌고, 바뀌면 곧바로 알려야 하는 것들이다.
+   이름·구역·소속·직분처럼 명단 전체의 짜임에 관계되는 칸은
+   엑셀에서 한꺼번에 손보시는 편이 안전하므로 여기서는 열지 않는다.
+
+   ★ 어디에 저장되나 — church/m_* 명단 문서 그 자체다.
+     출석상태·가족·사진과 달리 따로 둘 상자가 없다.
+     성도 화면에도 보여야 하는 값인데, 성도가 읽을 수 있는 문서는
+     m_member 뿐이기 때문이다(보안 규칙). 그래서 온전한 명단(m_master)을
+     고쳐 등급별 네 벌을 다시 만든다 — 엑셀을 올릴 때와 같은 길이다.
+     ⇒ ★엑셀을 다시 올리면 그 엑셀 내용으로 덮인다★. 화면에도 그렇게 적어 둔다.
+═══════════════════════════════════════════════════════ */
+const EDIT_FIELDS = [
+  { k:'구원년월', label:'구원년월', hint:'예: 1998.04', mode:'numeric' },
+  { k:'집전화',  label:'집전화',   hint:'예: 033-000-0000', mode:'tel' },
+  { k:'휴대폰',  label:'휴대폰',   hint:'예: 010-0000-0000', mode:'tel' },
+  { k:'주소',    label:'주소',     hint:'동·호수까지 적으시면 가족이 자동으로 묶입니다', area:true },
+  { k:'비고',    label:'비고',     hint:'안내실·전도인만 봅니다', area:true }
+];
+
 function projectMembers(members, fieldVis, role) {
   const ok = new Set(ALWAYS_FIELDS);
   DETAIL_FIELDS.forEach(f => { if (canSee(f, role, fieldVis)) ok.add(f); });
@@ -6502,7 +6525,7 @@ function VisitNotes({ member, dark }) {
 /*#ADMIN_ONLY_END*/
 function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate, onPhotoUpdate,
                       isAdmin, theme, toggle, role, fieldVis, visitCfg, listCfg,
-                      attStatus, onAttStatus, family: familyCfg, onHome }) {
+                      attStatus, onAttStatus, family: familyCfg, onHome, onSaveInfo }) {
   const dark   = theme === 'dark';
   const av     = getAv(m, dark);
   const attFull = effAttFull(m, attStatus);
@@ -6518,6 +6541,49 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
                      scopeAllows(myScope(), m);
   const see    = f => canSee(f, role, fieldVis);
   const roles  = canSee('직분', role, fieldVis) ? splitRoles(m['직분']) : [];
+  /* ★ 안내실의 「정보 고치기」 (정식 1.16) — EDIT_FIELDS 주석 참고 */
+  const canEditInfo = !!(isAdmin && onSaveInfo);
+  const [editing,  setEditing]  = useState(false);
+  const [form,     setForm]     = useState(null);
+  const [infoBusy, setInfoBusy] = useState(false);
+  const [infoMsg,  setInfoMsg]  = useState('');
+  /* 다른 식구로 옮겨 가면 고치던 것을 닫는다 — 남의 칸에 잘못 저장하지 않게 */
+  useEffect(() => { setEditing(false); setForm(null); setInfoMsg(''); }, [m && m['고유ID']]);
+
+  function openEdit() {
+    const o = {};
+    EDIT_FIELDS.forEach(f => {
+      o[f.k] = f.k === '구원년월' ? (normYm(m[f.k]) || '') : String(m[f.k] == null ? '' : m[f.k]);
+    });
+    setForm(o); setInfoMsg(''); setEditing(true);
+  }
+  function setF(k, v) { setForm(o => ({ ...o, [k]: v })); setInfoMsg(''); }
+
+  async function saveEdit() {
+    if (infoBusy || !form) return;
+    const patch = {};
+    EDIT_FIELDS.forEach(f => {
+      const raw = String(form[f.k] == null ? '' : form[f.k]).trim();
+      patch[f.k] = (f.k === '구원년월') ? (normYm(raw) || '') : raw;
+    });
+    /* 바뀐 것이 하나도 없으면 굳이 명단 네 벌을 다시 만들지 않는다 */
+    const same = EDIT_FIELDS.every(f => {
+      const was = f.k === '구원년월' ? (normYm(m[f.k]) || '')
+                                     : String(m[f.k] == null ? '' : m[f.k]).trim();
+      return was === patch[f.k];
+    });
+    if (same) { setEditing(false); setInfoMsg(''); return; }
+    setInfoBusy(true); setInfoMsg('');
+    try {
+      await onSaveInfo(m['고유ID'], patch);
+      setEditing(false);
+      setInfoMsg('ok:저장했습니다.');
+    } catch(e) {
+      setInfoMsg('err:' + fsErrMsg(e));
+    }
+    setInfoBusy(false);
+  }
+
   const familyAll = allMembers ? getFamilyGroup(m, allMembers, familyCfg) : [];
   /* 세대를 나누려면 나 자신을 포함한 집안 전체가 필요하다.
      ★ 감춘 식구도 이 계산에는 그대로 넣는다.
@@ -6727,11 +6793,67 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
 
       h('div', { className:'card fade', style:{ overflow:'hidden', padding:0, marginBottom:'12px' } },
         h('div', {
-          style:{ padding:'12px 18px', background:'var(--surface-2)', borderBottom:'1px solid var(--border)' }
+          style:{ padding:'12px 18px', background:'var(--surface-2)', borderBottom:'1px solid var(--border)',
+                  display:'flex', alignItems:'center', gap:'8px' }
         },
-          h('span', { style:{ fontSize:'13px', fontWeight:800, color:'var(--text-3)', letterSpacing:'.04em' } }, '상세 정보')
+          h('span', { style:{ fontSize:'13px', fontWeight:800, color:'var(--text-3)',
+                              letterSpacing:'.04em', flex:1 } }, '상세 정보'),
+          canEditInfo && !editing && h('button', {
+            type:'button', className:'chip', onClick:openEdit,
+            style:{ padding:'5px 12px', fontSize:'13px', flexShrink:0 }
+          }, h('i', { className:'ti ti-pencil', style:{ fontSize:'14px', marginRight:'3px' } }), '고치기')
         ),
-        fields.map(([lbl, val]) => h('div', { key:lbl, className:'irow' },
+
+        /* 저장 결과 한 줄 — 고치는 칸을 닫은 뒤에도 잠깐 남는다 */
+        infoMsg && h('div', { style:{ padding:'12px 18px 0' } },
+          h('div', {
+            className: 'note ' + (infoMsg.startsWith('ok:') ? 'note-ok' : 'note-bad'),
+            style:{ margin:0 }
+          }, infoMsg.slice(infoMsg.indexOf(':') + 1))),
+
+        /* ── 고치는 칸 ─────────────────────────────────────── */
+        editing && form
+          ? h('div', { style:{ padding:'16px 18px', display:'flex', flexDirection:'column', gap:'14px' } },
+              EDIT_FIELDS.map(f => h('div', { key:f.k },
+                h('label', { className:'irow-l', style:{ display:'block', marginBottom:'5px' } },
+                  h('i', { className:'ti ti-' + (FIELD_ICONS[f.k] || 'point'),
+                           style:{ fontSize:'14px', marginRight:'5px', color:'var(--navy)', opacity:.8 } }),
+                  f.label),
+                f.area
+                  ? h('textarea', {
+                      value: form[f.k], rows:3, disabled: infoBusy,
+                      placeholder: f.hint,
+                      onChange: e => setF(f.k, e.target.value),
+                      style:{ minHeight: f.k === '주소' ? '72px' : '90px', resize:'vertical' }
+                    })
+                  : h('input', {
+                      type:'text', inputMode: f.mode, value: form[f.k], disabled: infoBusy,
+                      placeholder: f.hint,
+                      onChange: e => setF(f.k, e.target.value)
+                    }),
+                !f.area && h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'5px' } }, f.hint)
+              )),
+              h('div', { style:{ display:'flex', gap:'8px' } },
+                h('button', {
+                  type:'button', className:'btn btn-ghost', disabled: infoBusy,
+                  style:{ flex:'0 0 92px' },
+                  onClick: () => { setEditing(false); setForm(null); setInfoMsg(''); }
+                }, '취소'),
+                h('button', {
+                  type:'button', className:'btn btn-primary', disabled: infoBusy, style:{ flex:1 },
+                  onClick: saveEdit
+                },
+                  infoBusy
+                    ? h('span', { className:'spinner', style:{ width:'16px', height:'16px', borderWidth:'2px' } })
+                    : h('i', { className:'ti ti-device-floppy', style:{ fontSize:'18px' } }),
+                  infoBusy ? '저장 중…' : '저장')
+              ),
+              h('div', { className:'note note-info', style:{ fontSize:'12.5px', lineHeight:1.7 } },
+                '저장하면 ', h('b', null, '성도·임원·안내실 화면에 곧바로'), ' 반영됩니다.', h('br'),
+                '다만 ', h('b', null, '엑셀을 다시 올리면 그 엑셀 내용으로 덮어써집니다'), '. ',
+                '고치신 뒤에는 ', h('b', null, '[관리 화면] → [데이터] 탭'), ' 에서 엑셀을 내려받아 두세요.')
+            )
+          : fields.map(([lbl, val]) => h('div', { key:lbl, className:'irow' },
           h('i', { className:'ti ti-' + (FIELD_ICONS[lbl] || 'point'), 'aria-hidden':true,
                    style:{ width:'22px', flexShrink:0, color:'var(--navy)', fontSize:'18px',
                            textAlign:'center', opacity:.85, marginTop:'2px' } }),
@@ -6782,7 +6904,13 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
             : lbl === '주소' && addr.base
               ? h(CopyBtn, { text: addr.base, title:'주소 복사 (동·호수 제외)' })
               : null
-        ))
+        )),
+
+        /* 고칠 수 있는 칸이 모두 비어 있으면 항목이 하나도 안 나온다 —
+           그때도 [고치기] 로 들어갈 수 있게 한 줄 안내를 둔다. */
+        !editing && canEditInfo && fields.length === 0 && h('div', {
+          style:{ padding:'18px', fontSize:'14px', color:'var(--text-3)', lineHeight:1.7 }
+        }, '적힌 정보가 없습니다. 위 ', h('b', null, '[고치기]'), ' 를 눌러 채워 주세요.')
       ),
 
       /* 심방 메모 — 전도인에게만, 전도인이 켜 둔 경우에만 */
@@ -12617,6 +12745,30 @@ function AppReady({ wizard, setWizard }) {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
+  /* ★ 안내실이 성도 정보를 고쳤다 (정식 1.16)
+
+     온전한 명단(m_master)을 한 번 읽어 그 한 사람만 고친 뒤,
+     fbSaveMembers 로 네 벌(master·admin·leader·member)을 다시 만든다.
+     엑셀을 올릴 때와 똑같은 길이라 보안 규칙을 고칠 필요가 없고,
+     성도 화면에도 곧바로 반영된다.
+     쓰기는 안내실만 허용되어 있으므로 화면에서도 안내실에게만 연다. */
+  const saveMemberInfo = useCallback(async (id, patch) => {
+    const master = await fbLoadMasterMembers();
+    if (!master.length) throw new Error('온전한 명단을 읽지 못했습니다.');
+    let found = false;
+    const next = master.map(x => {
+      if (String(x['고유ID']) !== String(id)) return x;
+      found = true;
+      return { ...x, ...patch };
+    });
+    if (!found) throw new Error('명단에서 이 성도를 찾지 못했습니다. 엑셀을 다시 올려 주세요.');
+    await fbSaveMembers(next, fieldVis, family);
+    /* 화면이 들고 있는 명단도 곧바로 고친다 — 다시 받지 않아도 보이게 */
+    setMembers(p => p.map(x =>
+      String(x['고유ID']) === String(id) ? { ...x, ...patch } : x));
+    setSelected(p => (p && String(p['고유ID']) === String(id)) ? { ...p, ...patch } : p);
+  }, [fieldVis, family]);
+
   const updatePhoto = (id, url) => setPhotos(p => ({ ...p, [id]: url }));
   const goDetail    = m => {
     listScroll.current = window.scrollY || 0;
@@ -12794,7 +12946,8 @@ function AppReady({ wizard, setWizard }) {
   if (phase === 'detail' && selected) return h(DetailView, {
     ...tp, member:selected, allMembers:members, photos, logoUrl, role, fieldVis, visitCfg, listCfg,
     attStatus, onAttStatus: changeAtt, family,
-    isAdmin: role === 'admin',   /* 사진 변경은 안내실 몫이다 (등급 개편) */
+    isAdmin: role === 'admin',   /* 사진 변경·정보 고치기는 안내실 몫이다 (등급 개편) */
+    onSaveInfo:    role === 'admin' ? saveMemberInfo : null,
     onBack:        goBack,
     onNavigate:    m  => setSelected(m),
     onPhotoUpdate: updatePhoto
