@@ -600,7 +600,7 @@ const CHURCH_CFG = {
     "교회 직원",
     "교회직원"
   ],
-  "guCodes": [],
+  "guCodes": ["11","12","13","21","22","23","31","32","33","41","42","43","51","52","61","62"],
   "deptAccounts": {
     "child": "d_child",
     "teen": "d_teen",
@@ -4940,6 +4940,8 @@ const LOGIN_ROLE_OF = LOGIN_ROLES.reduce((o, r) => { o[r.key] = r; return o; }, 
 /* 담당 구역 대신 고르는 「전체 명단」 — 옛 leader@ 계정이다.
    구역 번호일 수 없는 글자를 표로 쓴다. */
 const LEAD_ALL = '*';
+/* 콤보 맨 아래 「구역 번호 직접 적기」 — 구역 번호일 수 없는 글자를 표로 쓴다 */
+const LEAD_TYPE = '#';
 
 function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
   /* 임원판은 담당자로 시작한다 — 구역장·부장이 가장 많이 여신다 */
@@ -4951,6 +4953,7 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
   /* [≡] 메뉴가 펼쳐져 있나 (통합판에서만 쓴다) */
   const [menu, setMenu] = useState(false);
   /* 담당자가 고른 구역·부서 — 기기가 기억한다 (매번 고르지 않게) */
+  const [typing, setTyping] = useState(false);   /* 구역 번호를 직접 적는 중인가 */
   const [lead, setLead] = useState(() => {
     try { return localStorage.getItem('gsc_lead_code') || ''; } catch(e) { return ''; }
   });
@@ -5139,49 +5142,42 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
 
         /* 담당자 — 구역·부서를 먼저 고른다.
            구역 목록을 아직 모르는 기기에서는 직접 적는 칸이 나온다. */
+        /* ── 담당자 — 구역·부서를 콤보 하나로 고른다 ──────────────
+             구역 목록(CHURCH_CFG.guCodes)을 모르는 교회에서도 콤보는 늘 나온다.
+             그때는 맨 아래 「구역 번호 직접 적기」를 고르시면 숫자 칸이 열린다. */
         mode === 'leader' && h(React.Fragment, null,
-          (guCodes && guCodes.length)
-            ? h('select', {
-                value:lead, disabled:busy,
-                onChange: e => { setLead(e.target.value); setErr(''); },
-                style:{ fontSize:'16px', fontWeight:700, textAlign:'center' }
-              },
-                h('option', { value:'' }, '담당 구역·부서를 고르세요'),
-                h('option', { value:LEAD_ALL }, '전체 명단 (부장·총괄)'),
-                h('optgroup', { label:'구역' },
-                  guCodes.map(c => h('option', { key:c, value:c }, c + '구역'))),
-                h('optgroup', { label:'부서' },
-                  Object.keys(DEPT_ACCOUNTS).map(k => {
-                    const d = DEPT_BY_ID[DEPT_ACCOUNTS[k]];
-                    return h('option', { key:k, value:k }, (d && d.name) || k);
-                  }))
-              )
-            : h(React.Fragment, null,
-                h('input', {
-                  type:'text', inputMode:'numeric', disabled:busy,
-                  placeholder:'담당 구역 번호 (예: 11)',
-                  value:/^[0-9]*$/.test(lead) ? lead : '',
-                  onChange: e => { setLead(e.target.value.replace(/[^0-9]/g, '')); setErr(''); },
-                  style:{ textAlign:'center', fontSize:'19px', fontWeight:800, letterSpacing:'.1em' }
-                }),
-                h('div', { style:{ display:'flex', gap:'6px', flexWrap:'wrap' } },
-                  Object.keys(DEPT_ACCOUNTS).map(k => {
-                    const d = DEPT_BY_ID[DEPT_ACCOUNTS[k]];
-                    return h('button', {
-                      key:k, type:'button', disabled:busy,
-                      onClick: () => { setLead(k); setErr(''); },
-                      className: 'btn btn-sm ' + (lead === k ? 'btn-primary' : 'btn-ghost'),
-                      style:{ flex:1, minWidth:0, fontSize:'13px', padding:'0 6px' }
-                    }, (d && d.name) || k);
-                  }).concat([
-                    h('button', {
-                      key:LEAD_ALL, type:'button', disabled:busy,
-                      onClick: () => { setLead(LEAD_ALL); setErr(''); },
-                      className: 'btn btn-sm ' + (lead === LEAD_ALL ? 'btn-primary' : 'btn-ghost'),
-                      style:{ flex:1, minWidth:0, fontSize:'13px', padding:'0 6px' }
-                    }, '전체 명단')
-                  ]))
-              )
+          h('select', {
+            value: typing ? LEAD_TYPE : lead, disabled:busy,
+            onChange: e => {
+              const v = e.target.value;
+              if (v === LEAD_TYPE) { setTyping(true); setLead(''); }
+              else { setTyping(false); setLead(v); }
+              setErr('');
+            },
+            style:{ fontSize:'16px', fontWeight:700, textAlign:'center' }
+          },
+            h('option', { value:'' }, '담당 구역·부서를 고르세요'),
+            h('option', { value:LEAD_ALL }, '전체 명단 (부장·총괄)'),
+            (guCodes && guCodes.length)
+              ? h('optgroup', { label:'구역' },
+                  guCodes.map(c => h('option', { key:c, value:c }, c + '구역')))
+              : null,
+            h('optgroup', { label:'부서' },
+              Object.keys(DEPT_ACCOUNTS).map(k => {
+                const d = DEPT_BY_ID[DEPT_ACCOUNTS[k]];
+                return h('option', { key:k, value:k }, (d && d.name) || k);
+              })),
+            h('option', { value:LEAD_TYPE }, '구역 번호 직접 적기')
+          ),
+
+          /* 목록에 없는 구역이거나 목록을 모를 때 — 숫자로 적는다 */
+          typing && h('input', {
+            type:'text', inputMode:'numeric', disabled:busy, autoFocus:true,
+            placeholder:'담당 구역 번호 (예: 11)',
+            value:/^[0-9]*$/.test(lead) ? lead : '',
+            onChange: e => { setLead(e.target.value.replace(/[^0-9]/g, '')); setErr(''); },
+            style:{ textAlign:'center', fontSize:'19px', fontWeight:800, letterSpacing:'.1em' }
+          })
         ),
 
         h('input', {
@@ -7703,29 +7699,6 @@ function VisitAdmin({ members, cfg, onCfgUpdate, dark }) {
   const [stat,   setStat]   = useState(null);
   const [statMsg, setStatMsg] = useState('');
 
-  /* 심방 적기 — 주소록을 거치지 않고 여기서 바로 성도를 고른다.
-     전도인은 심방을 다녀와 이 탭에서 곧장 적는 일이 가장 잦다. */
-  const [srch,   setSrch]   = useState('');
-  const [picked, setPicked] = useState('');
-  const pickedM = useMemo(
-    () => (members || []).find(mm => String(mm['고유ID']) === picked) || null,
-    [members, picked]);
-  const hits = useMemo(() => {
-    const q = srch.trim();
-    if (!q) return [];
-    const low = q.toLowerCase();
-    return (members || []).filter(mm => {
-      const nm = String(mm['이름'] || '');
-      return nm.indexOf(q) >= 0
-          || getChoseong(nm).indexOf(q) >= 0
-          || String(mm['구역'] || '').indexOf(q) >= 0
-          || String(mm['소속'] || '').toLowerCase().indexOf(low) >= 0
-          || String(mm['직분'] || '').toLowerCase().indexOf(low) >= 0;
-    }).slice(0, 40);
-  }, [members, srch]);
-  const who = mm => [mm['직분'], mm['구역'] ? mm['구역'] + '구역' : '', mm['소속']]
-                      .filter(Boolean).join(' · ');
-
   useEffect(() => { setC(normVisitCfg(cfg)); }, [cfg]);
 
   const changed = c.enabled !== normVisitCfg(cfg).enabled || c.level !== normVisitCfg(cfg).level;
@@ -7811,58 +7784,11 @@ function VisitAdmin({ members, cfg, onCfgUpdate, dark }) {
 
   return h(React.Fragment, null,
 
-    /* ═══ 심방 적기 — 성도를 고르고 그 자리에서 적는다 ═══ */
-    h(Card, null,
-      h(SLabel, { icon:'user-search', text:'심방 적기' }),
-
-      !c.enabled
-        ? h('p', { style:{ fontSize:'14px', color:'var(--text-2)', lineHeight:1.75 } },
-            '심방 메모 기능이 꺼져 있습니다. 아래 ', h('b', null, '[기능 사용]'),
-            ' 을 「사용함」으로 바꾸시면 여기서 바로 적으실 수 있습니다.')
-      : pickedM
-        ? h(React.Fragment, null,
-            h('div', { style:{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'12px' } },
-              h('div', { style:{ flex:1, minWidth:0 } },
-                h('b', { style:{ fontSize:'17px' } },
-                  (pickedM['이름'] || '') +
-                  (pickedM['동명이인구분'] ? '(' + pickedM['동명이인구분'] + ')' : '')),
-                h('div', { style:{ fontSize:'13px', color:'var(--text-3)', marginTop:'2px' } },
-                  who(pickedM))),
-              h('button', { type:'button', className:'btn btn-ghost btn-sm',
-                onClick: () => { setPicked(''); setSrch(''); } },
-                h('i', { className:'ti ti-arrow-back-up', style:{ fontSize:'16px' } }), '다른 분')),
-            h(VisitNotes, { member:pickedM, dark }))
-      : h(React.Fragment, null,
-          h('p', { style:{ fontSize:'13px', color:'var(--text-2)', lineHeight:1.7, marginBottom:'10px' } },
-            '성도를 고르시면 ', h('b', null, '이 자리에서 바로'), ' 심방 내용을 적으실 수 있습니다. ',
-            '주소록에서 성도를 열어 적으시던 것과 똑같이 저장됩니다.'),
-          h('input', { type:'text', value:srch,
-            placeholder:'이름 · 초성 · 구역 · 소속으로 찾기',
-            onChange: e => setSrch(e.target.value) }),
-          srch.trim()
-            ? (hits.length
-                ? h('div', { style:{ display:'flex', flexDirection:'column', gap:'6px', marginTop:'10px' } },
-                    hits.map(mm => h('button', {
-                      key: String(mm['고유ID']), type:'button', className:'btn btn-ghost',
-                      style:{ justifyContent:'flex-start', textAlign:'left', padding:'11px 13px' },
-                      onClick: () => setPicked(String(mm['고유ID']))
-                    },
-                      h('span', { style:{ display:'flex', flexDirection:'column', gap:'2px', minWidth:0 } },
-                        h('b', { style:{ fontSize:'15px' } },
-                          (mm['이름'] || '') +
-                          (mm['동명이인구분'] ? '(' + mm['동명이인구분'] + ')' : '')),
-                        h('span', { style:{ fontSize:'12.5px', color:'var(--text-3)' } }, who(mm))))))
-                : h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', marginTop:'10px' } },
-                    '찾으시는 분이 없습니다.'))
-            : null)
-    ),
-
     h(Card, null,
       h(SLabel, { icon:'notes', text:'심방 메모 사용 설정' }),
 
       h('div', { className:'note note-info', style:{ marginBottom:'14px' } },
-        '전도인이 심방을 다녀와 ', h('b', null, '위 [심방 적기]'), ' 또는 ',
-        h('b', null, '주소록의 성도 상세 화면'), '에서 날짜별로 내용을 적어 두는 기능입니다.', h('br'),
+        '전도인이 심방을 다녀와 ', h('b', null, '성도 상세 화면'), '에서 날짜별로 내용을 적어 두는 기능입니다.', h('br'),
         h('span', { style:{ fontSize:'13px', opacity:.9 } },
           '명단과 따로 보관하므로 엑셀을 다시 올려도 메모는 지워지지 않습니다. 목회자가 바뀌어도 그대로 남습니다.')
       ),
@@ -9777,7 +9703,8 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
   const tabs = isEvang
     ? [
         ['attend','출석','clipboard-check'],
-        ['visit','심방 메모','notes']
+        ['visit','심방 메모','notes'],
+        ['pwd','비밀번호','lock']
       ]
     : [
         ['upload','데이터','database-import'],
@@ -10071,15 +9998,31 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
           h('span', { style:{ fontSize:'13px', opacity:.85 } },
             '잊어버리셨다면 Firebase 콘솔 → Authentication 에서 재설정하세요.')
         ),
-        h(PwdCard, { role:'member', icon:'users',       title:'성도용 비밀번호',
-                     desc:'성도들에게 알려 주는 비밀번호입니다.' }),
-        h(PwdCard, { role:'leader', icon:'clipboard-check', title:'전체 임원 비밀번호',
-                     desc:'모든 명단을 볼 수 있는 임원 계정입니다 (부장·총괄용). 로그인 화면의 「성도」 칸에 이 비밀번호를 넣으면 조용히 임원으로 들어갑니다. 구역·부서 담당자는 아래 계정을 쓰세요 — 자기 명단만 열립니다.' }),
-        h(LeaderAccounts, { members }),
-        h(PwdCard, { role:'admin',  icon:'user-shield', title:'안내실 비밀번호',
-                     desc:'명단·사진·표시 설정·가족·비밀번호·교회 설정을 맡는 비밀번호입니다. 가장 조심해서 보관하세요.' }),
-        h(PwdCard, { role:'master', icon:'notes', title:'전도인 비밀번호',
-                     desc:'출석표와 심방 메모를 맡는 비밀번호입니다. 명단이나 설정은 고칠 수 없습니다.' }),
+        /* ★ 자기 등급 비밀번호는 자기 화면에서 바꾼다 (등급 개편).
+             전도인 비밀번호를 안내실이 바꿀 수 있으면, 안내실 비밀번호를 아는 사람이
+             전도인 자리까지 가져갈 수 있다. 그래서 서로의 것을 건드리지 못하게 나눴다. */
+        isEvang
+          ? h(React.Fragment, null,
+              h(PwdCard, { role:'master', icon:'notes', title:'전도인 비밀번호',
+                           desc:'지금 쓰고 계신 이 비밀번호입니다. 출석표와 심방 메모를 맡습니다. 바꾸시면 이 화면도 곧 로그아웃되니, 새 비밀번호로 다시 들어오세요.' }),
+              h('div', { className:'note note-info' },
+                h('b', null, '다른 등급의 비밀번호는 안내실이 맡습니다.'), h('br'),
+                h('span', { style:{ fontSize:'13px', opacity:.9 } },
+                  '성도용 · 임원용 · 구역·부서 담당자 · 안내실 비밀번호는 ',
+                  '안내실 관리 화면의 [비밀번호] 탭에 있습니다.')))
+          : h(React.Fragment, null,
+              h(PwdCard, { role:'member', icon:'users',       title:'성도용 비밀번호',
+                           desc:'성도들에게 알려 주는 비밀번호입니다.' }),
+              h(PwdCard, { role:'leader', icon:'clipboard-check', title:'전체 임원 비밀번호',
+                           desc:'모든 명단을 볼 수 있는 임원 계정입니다 (부장·총괄용). 로그인 화면의 「성도」 칸에 이 비밀번호를 넣으면 조용히 임원으로 들어갑니다. 구역·부서 담당자는 아래 계정을 쓰세요 — 자기 명단만 열립니다.' }),
+              h(LeaderAccounts, { members }),
+              h(PwdCard, { role:'admin',  icon:'user-shield', title:'안내실 비밀번호',
+                           desc:'지금 쓰고 계신 이 비밀번호입니다. 명단·사진·표시 설정·가족·모임·교회 설정을 맡습니다. 바꾸시면 이 화면도 곧 로그아웃되니, 새 비밀번호로 다시 들어오세요.' }),
+              h('div', { className:'note note-info' },
+                h('b', null, '전도인 비밀번호는 여기서 바꾸지 않습니다.'), h('br'),
+                h('span', { style:{ fontSize:'13px', opacity:.9 } },
+                  '전도인이 직접 로그인해 관리 화면의 [비밀번호] 탭에서 바꾸십니다. ',
+                  '잊으셨다면 Firebase 콘솔 → Authentication 에서 재설정하세요.'))),
 
         h('div', { className:'note note-warn' },
           h('b', null, '비밀번호를 바꾸면 접속 중인 모든 분이 로그아웃됩니다.'), h('br'),
@@ -11775,7 +11718,7 @@ function AppReady({ wizard, setWizard }) {
           setVisitCfg(normVisitCfg(cachedData.visitCfg));
           setListCfg(normListCfg(cachedData.listCfg));
           setFamily(normFamily(cachedData.family));
-          setPhase(r === 'master' ? 'admin' : 'main');
+          setPhase('main');
         } else if (recoverFsOnce(e)) {
           /* SDK 가 깨진 경우 — 화면을 자동으로 다시 불러 되살린다 */
           setStep('recover');
@@ -11839,7 +11782,7 @@ function AppReady({ wizard, setWizard }) {
   useEffect(() => {
     backRef.current = () => {
       if (phase === 'detail') { clearHist(); setPhase('main'); return true; }
-      if (phase === 'attend') { clearHist(); setPhase(role === 'master' ? 'admin' : 'main'); return true; }
+      if (phase === 'attend') { clearHist(); setPhase('main'); return true; }
       return false;                     /* 뿌리 화면 — 앱을 닫는다 */
     };
   }, [phase, role, clearHist]);
@@ -11897,7 +11840,7 @@ function AppReady({ wizard, setWizard }) {
       setRole(r);
       localStorage.setItem('gsc_user_role', r);
       await loadAtt(r);
-      setPhase(r === 'master' ? 'admin' : 'main');
+      setPhase('main');
     } catch(e) {
       /* ★ 정식 1.03 — 여기서 로그아웃하지 않는다.
 
