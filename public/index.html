@@ -5761,7 +5761,9 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
            설정보다 앞(왼쪽)에 둔다. */
         isLeader && onAttend
           ? h(NBtn, { onClick:onAttend, icon:'clipboard-check', title:'출석표' }) : null,
-        role === 'master' && onAdminPanel
+        /* 관리 화면 — 안내실·전도인 둘 다 들어간다.
+           등급은 onAdminPanel 을 넘길 때 이미 가려 두었으므로 여기서 또 보지 않는다. */
+        onAdminPanel
           ? h(NBtn, { onClick:onAdminPanel, icon:'settings', title:'관리 화면' }) : null,
         h(ThemeBtn, { theme, toggle }),
         h(NBtn, { onClick:onLogout, icon:'logout', title:'로그아웃' })
@@ -5978,7 +5980,7 @@ function isoToYmd(v) {
   return dg.slice(0,4) + '.' + dg.slice(4,6) + '.' + dg.slice(6,8);
 }
 
-
+/*#ADMIN_ONLY_START*/
 function VisitNotes({ member, dark }) {
   const id = member['고유ID'];
 
@@ -6177,7 +6179,7 @@ function VisitNotes({ member, dark }) {
   );
 }
 
-
+/*#ADMIN_ONLY_END*/
 function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate, onPhotoUpdate,
                       isAdmin, theme, toggle, role, fieldVis, visitCfg, listCfg,
                       attStatus, onAttStatus, family: familyCfg }) {
@@ -6463,7 +6465,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
   );
 }
 
-
+/*#ADMIN_ONLY_START*/
 /* ═══════════════════════════════════════════════════════
    출석표 (v26 개편)
 
@@ -7701,6 +7703,29 @@ function VisitAdmin({ members, cfg, onCfgUpdate, dark }) {
   const [stat,   setStat]   = useState(null);
   const [statMsg, setStatMsg] = useState('');
 
+  /* 심방 적기 — 주소록을 거치지 않고 여기서 바로 성도를 고른다.
+     전도인은 심방을 다녀와 이 탭에서 곧장 적는 일이 가장 잦다. */
+  const [srch,   setSrch]   = useState('');
+  const [picked, setPicked] = useState('');
+  const pickedM = useMemo(
+    () => (members || []).find(mm => String(mm['고유ID']) === picked) || null,
+    [members, picked]);
+  const hits = useMemo(() => {
+    const q = srch.trim();
+    if (!q) return [];
+    const low = q.toLowerCase();
+    return (members || []).filter(mm => {
+      const nm = String(mm['이름'] || '');
+      return nm.indexOf(q) >= 0
+          || getChoseong(nm).indexOf(q) >= 0
+          || String(mm['구역'] || '').indexOf(q) >= 0
+          || String(mm['소속'] || '').toLowerCase().indexOf(low) >= 0
+          || String(mm['직분'] || '').toLowerCase().indexOf(low) >= 0;
+    }).slice(0, 40);
+  }, [members, srch]);
+  const who = mm => [mm['직분'], mm['구역'] ? mm['구역'] + '구역' : '', mm['소속']]
+                      .filter(Boolean).join(' · ');
+
   useEffect(() => { setC(normVisitCfg(cfg)); }, [cfg]);
 
   const changed = c.enabled !== normVisitCfg(cfg).enabled || c.level !== normVisitCfg(cfg).level;
@@ -7786,11 +7811,58 @@ function VisitAdmin({ members, cfg, onCfgUpdate, dark }) {
 
   return h(React.Fragment, null,
 
+    /* ═══ 심방 적기 — 성도를 고르고 그 자리에서 적는다 ═══ */
+    h(Card, null,
+      h(SLabel, { icon:'user-search', text:'심방 적기' }),
+
+      !c.enabled
+        ? h('p', { style:{ fontSize:'14px', color:'var(--text-2)', lineHeight:1.75 } },
+            '심방 메모 기능이 꺼져 있습니다. 아래 ', h('b', null, '[기능 사용]'),
+            ' 을 「사용함」으로 바꾸시면 여기서 바로 적으실 수 있습니다.')
+      : pickedM
+        ? h(React.Fragment, null,
+            h('div', { style:{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'12px' } },
+              h('div', { style:{ flex:1, minWidth:0 } },
+                h('b', { style:{ fontSize:'17px' } },
+                  (pickedM['이름'] || '') +
+                  (pickedM['동명이인구분'] ? '(' + pickedM['동명이인구분'] + ')' : '')),
+                h('div', { style:{ fontSize:'13px', color:'var(--text-3)', marginTop:'2px' } },
+                  who(pickedM))),
+              h('button', { type:'button', className:'btn btn-ghost btn-sm',
+                onClick: () => { setPicked(''); setSrch(''); } },
+                h('i', { className:'ti ti-arrow-back-up', style:{ fontSize:'16px' } }), '다른 분')),
+            h(VisitNotes, { member:pickedM, dark }))
+      : h(React.Fragment, null,
+          h('p', { style:{ fontSize:'13px', color:'var(--text-2)', lineHeight:1.7, marginBottom:'10px' } },
+            '성도를 고르시면 ', h('b', null, '이 자리에서 바로'), ' 심방 내용을 적으실 수 있습니다. ',
+            '주소록에서 성도를 열어 적으시던 것과 똑같이 저장됩니다.'),
+          h('input', { type:'text', value:srch,
+            placeholder:'이름 · 초성 · 구역 · 소속으로 찾기',
+            onChange: e => setSrch(e.target.value) }),
+          srch.trim()
+            ? (hits.length
+                ? h('div', { style:{ display:'flex', flexDirection:'column', gap:'6px', marginTop:'10px' } },
+                    hits.map(mm => h('button', {
+                      key: String(mm['고유ID']), type:'button', className:'btn btn-ghost',
+                      style:{ justifyContent:'flex-start', textAlign:'left', padding:'11px 13px' },
+                      onClick: () => setPicked(String(mm['고유ID']))
+                    },
+                      h('span', { style:{ display:'flex', flexDirection:'column', gap:'2px', minWidth:0 } },
+                        h('b', { style:{ fontSize:'15px' } },
+                          (mm['이름'] || '') +
+                          (mm['동명이인구분'] ? '(' + mm['동명이인구분'] + ')' : '')),
+                        h('span', { style:{ fontSize:'12.5px', color:'var(--text-3)' } }, who(mm))))))
+                : h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', marginTop:'10px' } },
+                    '찾으시는 분이 없습니다.'))
+            : null)
+    ),
+
     h(Card, null,
       h(SLabel, { icon:'notes', text:'심방 메모 사용 설정' }),
 
       h('div', { className:'note note-info', style:{ marginBottom:'14px' } },
-        '전도인이 심방을 다녀와 ', h('b', null, '성도 상세 화면'), '에서 날짜별로 내용을 적어 두는 기능입니다.', h('br'),
+        '전도인이 심방을 다녀와 ', h('b', null, '위 [심방 적기]'), ' 또는 ',
+        h('b', null, '주소록의 성도 상세 화면'), '에서 날짜별로 내용을 적어 두는 기능입니다.', h('br'),
         h('span', { style:{ fontSize:'13px', opacity:.9 } },
           '명단과 따로 보관하므로 엑셀을 다시 올려도 메모는 지워지지 않습니다. 목회자가 바뀌어도 그대로 남습니다.')
       ),
@@ -8001,7 +8073,11 @@ function EvTgtChip({ on, label, n, onClick }) {
   );
 }
 
-function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, dark }) {
+function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, dark, only }) {
+  /* only === 'events' 이면 「모임」 칸 하나만 보여 준다 — 안내실 [모임] 탭.
+     그 밖(전도인 [출석] 탭)에서는 모임 칸만 빼고 나머지를 다 보여 준다.
+     모임 만들기는 안내실 몫으로 옮겼기 때문이다. */
+  const evOnly = (only === 'events');
   const [busy,  setBusy]  = useState(false);
   const [msg,   setMsg]   = useState('');
   const [nWeek, setNWeek] = useState(8);
@@ -8390,7 +8466,7 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
       loadErr, h('div', { style:{ marginTop:'6px', fontSize:'12.5px', opacity:.85 } },
         '보안 규칙에 ', h('b', null, 'attend'), ' 항목이 있는지 확인하고 다시 게시하세요.')),
 
-    h(Card, null,
+    !evOnly && h(Card, null,
       h(SLabel, { icon:'clipboard-check', text:'주일 출석표' }),
       h('p', { style:{ fontSize:'13.5px', color:'var(--text-2)', lineHeight:1.7, marginBottom:'12px' } },
         '구역장·부장이 주일마다 자기 명단을 눌러 체크하는 화면입니다. ',
@@ -8404,7 +8480,7 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
     ),
 
     /* ═══ 명단 묶음 ═══ */
-    h(Card, null,
+    !evOnly && h(Card, null,
       h(SLabel, { icon:'users-group', text:'명단 묶음 — 누가 누구를 체크하나' }),
       h('div', { className:'note note-info', style:{ marginBottom:'14px' } },
         h('b', null, '한 사람은 주일에 딱 한 곳에만 나옵니다.'), h('br'),
@@ -8573,7 +8649,7 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
     ),
 
     /* ═══ 모임 ═══ */
-    h(Card, null,
+    evOnly && h(Card, null,
       h(SLabel, { icon:'calendar-plus', text:'모임 — 주일이 아닌 지정 날짜' }),
       h('p', { style:{ fontSize:'13px', color:'var(--text-2)', lineHeight:1.7, marginBottom:'12px' } },
         '영유아부 모임(목요일), 봉사회 모임, 어머니회 모임처럼 따로 모이는 날을 만들어 두면 ',
@@ -8695,7 +8771,7 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
     ),
 
     /* ═══ 출석상태 현황 ═══ */
-    h(Card, null,
+    !evOnly && h(Card, null,
       h(SLabel, { icon:'chart-pie', text:'출석상태 현황' }),
       h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginBottom:'10px', lineHeight:1.6 } },
         '담당자가 출석상태를 못 고치게 잠그거나, 타지역·불참을 주소록 목록에서 빼시려면 ',
@@ -8749,7 +8825,7 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
     ),
 
     /* ═══ 엑셀 ═══ */
-    h(Card, null,
+    !evOnly && h(Card, null,
       h(SLabel, { icon:'file-spreadsheet', text:'출석 엑셀로 내려받기' }),
       h('p', { style:{ fontSize:'13px', color:'var(--text-2)', lineHeight:1.7, marginBottom:'12px' } },
         h('b', null, '주일요약'), ' (주일마다 구역별·부서별·별도 명단별 + 교회 전체 한 줄) · ',
@@ -8771,7 +8847,7 @@ function AttendAdmin({ members, attStatus, onAttStatus, onAttReload, onAttend, d
         busy ? '만드는 중...' : '엑셀로 내려받기')
     ),
 
-    h(Card, null,
+    !evOnly && h(Card, null,
       h(DiagBox, {
         title:'출석 연결 진단',
         icon:'stethoscope',
@@ -9708,6 +9784,7 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
         ['photos','사진','photo'],
         ['vis','표시 설정','eye-cog'],
         ['family','가족','users'],
+        ['events','모임','calendar-plus'],
         ['pwd','비밀번호','lock'],
         ['church','교회 설정','wand']
       ];
@@ -9933,6 +10010,11 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
 
       tab === 'attend' && h(AttendAdmin, {
         members, attStatus, onAttStatus, onAttReload, onAttend, dark
+      }),
+
+      /* 안내실 [모임] 탭 — 같은 부품에서 모임 칸만 꺼내 쓴다 */
+      tab === 'events' && h(AttendAdmin, {
+        members, attStatus, onAttStatus, onAttReload, onAttend, dark, only:'events'
       }),
 
       tab === 'family' && h(FamilyAdmin, {
@@ -10197,6 +10279,93 @@ function injectCfg(src, cfg) {
          JSON.stringify(cfg, null, 2) + ';\n' + CFG_MARK_B + src.slice(j + CFG_MARK_B.length);
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   성도용 파일 만들기 (설치판 이원화)
+
+   임원용 파일 글자에는 관리 구역 표식(#ADMIN_ONLY_START … #ADMIN_ONLY_END)이
+   주석으로 그대로 남아 있다. 그 사이를 통째로 들어내고 BUILD 를 'member' 로
+   바꾸면 성도용 파일이 된다 — build.py 가 하는 일과 똑같은 일을 브라우저에서 한다.
+
+   ★ 아래 MEMBER_STUB 은 build.py 도 ★이 자리에서 읽어 간다★.
+     글이 한 곳에만 있어야 두 벌이 어긋나지 않는다.
+     표식 이름을 바꾸거나 다른 파일로 옮기면 build.py 가 멈춘다.
+═══════════════════════════════════════════════════════════════════ */
+/*#MEMBER_STUB_START*/
+const MEMBER_STUB = `/* ═══════════════════════════════════════════════════════
+   성도용에 들어 있지 않은 화면들 (대역)
+
+   출석표 · 관리 화면 · 설치 마법사는 임원 주소에만 있습니다.
+   여기서는 코드 자체가 없으므로, 실수로 불렸을 때 하얀 화면이
+   남지 않도록 안내만 보여 주고 처음 화면으로 돌려보낸다.
+═══════════════════════════════════════════════════════ */
+function NotInThisBuild() {
+  function out() {
+    try { localStorage.removeItem('gsc_user_role'); } catch(e) {}
+    try { signOutAll(); } catch(e) {}
+    try { location.reload(); } catch(e) {}
+  }
+  /* 아직 교회 설정을 안 한 파일 = 성도용 설치판을 그냥 여신 것이다 */
+  var fresh = !(typeof CHURCH_CFG !== 'undefined' && CHURCH_CFG && CHURCH_CFG.configured);
+  return h('div', { className:'screen', style:{ justifyContent:'center', padding:'28px 20px' } },
+    h('div', { className:'wrap', style:{ textAlign:'center' } },
+      h('i', { className:'ti ti-lock-open-off', style:{ fontSize:'50px', color:'var(--text-3)' } }),
+      h('h2', { style:{ fontSize:'20px', fontWeight:800, margin:'14px 0 8px' } },
+        fresh ? '이 파일은 성도용입니다' : '이 주소에는 없는 화면입니다'),
+      h('p', { style:{ fontSize:'14.5px', color:'var(--text-2)', lineHeight:1.75 } },
+        fresh
+          ? '교회 설정은 「안내실·전도인용」 파일에서 하십시오. 그 파일의 설치 마법사가 성도용과 임원용 두 파일을 함께 만들어 드립니다.'
+          : '출석표와 관리 화면은 이 주소에 없습니다.'),
+      fresh ? null : h('button', { type:'button', onClick:out, className:'btn btn-primary btn-block',
+                    style:{ marginTop:'14px' } },
+        h('i', { className:'ti ti-home', style:{ fontSize:'18px' } }), '처음 화면으로')
+    )
+  );
+}
+const AttendView  = NotInThisBuild;
+const AdminView   = NotInThisBuild;
+const SetupWizard = NotInThisBuild;
+/* 심방 메모는 성도에게 어떤 설정에서도 가지 않는다 — 자리만 채운다 */
+function VisitNotes() { return null; }
+
+`;
+/*#MEMBER_STUB_END*/
+
+/* 관리 구역 표식 — 글자로 통째 적으면 build.py 가 이 줄까지 표식으로 본다.
+   그래서 둘로 쪼개 이어 붙인다 (CFG_MARK_A 와 같은 요령). */
+const ADM_MARK_A = '/*#ADMIN' + '_ONLY_START*/';
+const ADM_MARK_B = '/*#ADMIN' + '_ONLY_END*/';
+
+/* BUILD 줄을 바꿔 끼운다 */
+function setBuildKind(src, kind) {
+  const m = src.match(/const BUILD = '(?:all|member|admin)';/);
+  if (!m) throw new Error('BUILD 줄을 찾지 못했습니다');
+  return src.replace(m[0], "const BUILD = '" + kind + "';");
+}
+
+/* 임원용 글자 → 성도용 글자 (build.py 의 strip_admin 과 같은 일) */
+function toMemberSource(src) {
+  if (src.indexOf(ADM_MARK_A) < 0)
+    throw new Error('관리 구역 표식이 없는 파일입니다 — 안내실·전도인용 파일로 해 주세요');
+  let out = '', i = 0;
+  for (;;) {
+    const a = src.indexOf(ADM_MARK_A, i);
+    if (a < 0) { out += src.slice(i); break; }
+    const b = src.indexOf(ADM_MARK_B, a);
+    if (b < 0) throw new Error('관리 구역 끝 표식을 찾지 못했습니다');
+    out += src.slice(i, a);
+    i = b + ADM_MARK_B.length;
+  }
+  if (out.indexOf('function App() {') < 0) throw new Error('App 자리를 찾지 못했습니다');
+  out = out.replace('function App() {', MEMBER_STUB + 'function App() {');
+  return setBuildKind(out, 'member');
+}
+
+/* 임원용 글자 — 표식은 ★남겨 둔다★.
+   나중에 이 파일로 마법사를 다시 돌려 성도용을 또 만들 수 있어야 하기 때문이다. */
+function toAdminSource(src) {
+  return setBuildKind(src, 'admin');
+}
+
 function downloadText(text, filename, mime) {
   const b = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
   const u = URL.createObjectURL(b);
@@ -10294,13 +10463,15 @@ function buildRulesText(cfg) {
     '',
     '    /* ── 출석 ────────────────────────────────────────────',
     '       읽기는 임원 이상. 쓰기는 두 가지로 나눈다.',
-    '       · groups · events → 전도인만 (명단 구성과 모임 개설은 전도인 몫)',
+    '       · groups → 전도인만 (명단 구성)',
+    '       · events → 전도인과 안내실 (모임 개설은 안내실 몫)',
     '       · 그 밖 → 임원 이상',
     '       ★ 두 줄로 나누어 쓰면 안 된다. 겹치는 규칙 중 하나라도',
     '         허용하면 허용되므로, 한 줄에 조건으로 갈라 적어야 막힌다. */',
     '    match /attend/{id} {',
     '      allow read:  if isLeader();',
     '      allow write: if isMaster()',
+    "                   || (isOffice() && id == 'events')",
     "                   || (isLeader() && id != 'groups' && id != 'events');",
     '    }',
     '',
@@ -10786,6 +10957,7 @@ function SetupWizard({ initial, onClose, startAt }) {
   const [logoMsg,  setLogoMsg]  = useState('');
   const [genMsg,   setGenMsg]   = useState('');
   const [needPick, setNeedPick] = useState(false);
+  const [pickKind, setPickKind] = useState('admin');   /* 직접 고른 파일로 무엇을 만들 차례인가 */
 
   const LAST = SCREENS.length - 1;
   const set  = (k, v) => setCfg(p => ({ ...p, [k]: v }));
@@ -10854,16 +11026,26 @@ function SetupWizard({ initial, onClose, startAt }) {
     };
   }
 
-  function generate(srcText) {
-    const c = finalCfg();
+  /* ★ 완성 파일을 ★두 개★ 만든다 (설치판 이원화)
+       성도용         — 관리 구역을 들어낸 파일. 성도들께 알리는 주소에 올린다.
+       안내실·전도인용 — 통째로. 담당자 · 안내실 · 전도인만 아는 주소에 올린다.
+     둘 다 파일 이름이 index.html 이라 한꺼번에 내려받으면 헷갈린다.
+     그래서 단추를 둘로 두고, 하나 받아 폴더에 넣으신 뒤 다음을 받으시게 한다. */
+  function generate(kind, srcText) {
+    const c  = finalCfg();
+    const nm = (kind === 'member') ? '성도용' : '안내실·전도인용';
     try {
-      const out = injectCfg(srcText || serializeSelf(c), c);
+      const raw  = srcText || serializeSelf(c);
+      const body = (kind === 'member') ? toMemberSource(raw) : toAdminSource(raw);
+      const out  = injectCfg(body, c);
       if (out.indexOf('"configured": true') < 0) throw new Error('설정을 넣지 못했습니다');
       downloadText(out, 'index.html', 'text/html');
-      setGenMsg('ok:index.html 을 내려받았습니다. 이름을 바꾸지 마세요.');
+      setGenMsg('ok:' + nm + ' index.html 을 내려받았습니다. 이름을 바꾸지 마시고 폴더에 넣어 두세요.');
       setNeedPick(false);
     } catch(e) {
-      setGenMsg('err:' + ((e && e.message) || '만들지 못했습니다') + ' — 아래 「파일 직접 고르기」로 해 보세요.');
+      setGenMsg('err:' + nm + ' — ' + ((e && e.message) || '만들지 못했습니다')
+                + ' · 아래 「파일 직접 고르기」로 해 보세요.');
+      setPickKind(kind);
       setNeedPick(true);
     }
   }
@@ -10873,7 +11055,7 @@ function SetupWizard({ initial, onClose, startAt }) {
     try {
       const txt = await f.text();
       if (txt.indexOf(CFG_MARK_A) < 0) setGenMsg('err:설정 블록이 없는 파일입니다. 설치판 HTML 을 골라 주세요.');
-      else generate(txt);
+      else generate(pickKind, txt);
     } catch(err) { setGenMsg('err:파일을 읽지 못했습니다.'); }
     e.target.value = '';
   }
@@ -11195,23 +11377,39 @@ function SetupWizard({ initial, onClose, startAt }) {
       '은 부서로 두지 마세요. 구역에서 체크하고, 따로 모이는 날은 나중에 [모임]으로 만드시면 됩니다.')
   ));
 
-  /* 9 · 완성 파일 */
+  /* 9 · 완성 파일 — 성도용 · 안내실전도인용 두 개 */
   S.push(stack(14,
-    h(Head, { key:'h', t:'④ 완성 파일 만들기', s:'지금까지 넣으신 값이 들어간 파일 하나가 만들어집니다.' }),
-    h('button', { key:'b', type:'button', className:'btn btn-primary',
-      style:{ width:'100%', padding:'17px', fontSize:'17px' }, onClick:() => generate(null) },
-      h('i', { className:'ti ti-download' }), 'index.html 내려받기'),
+    h(Head, { key:'h', t:'④ 완성 파일 두 개 만들기',
+              s:'주소를 둘로 나눠 씁니다. 파일도 둘입니다.' }),
+
+    h('div', { key:'x', className:'note note-info', style:{ fontSize:'14.5px', lineHeight:1.75 } },
+      h('b', null, '성도용'), ' — 성도들께 알리는 주소입니다. 주소록만 열립니다.', h('br'),
+      h('b', null, '안내실·전도인용'), ' — 담당자 · 안내실 · 전도인만 아는 주소입니다. ',
+      '출석표 · 심방 메모 · 관리 화면이 여기 있습니다.', h('br'),
+      h('span', { style:{ fontSize:'13.5px', opacity:.9 } },
+        '성도 주소에는 관리 화면 코드가 아예 들어가지 않습니다 — 감추는 것이 아니라 없습니다.')),
+
+    h('div', { key:'w', className:'note note-bad', style:{ fontSize:'15px', lineHeight:1.7 } },
+      h('b', null, '두 파일 모두 이름이 '), h('code', null, 'index.html'), h('b', null, ' 입니다.'),
+      ' 하나를 받아 ', h('b', null, '폴더에 넣으신 뒤'), ' 다음 것을 받으세요. ',
+      '먼저 받은 것을 옮기지 않으면 ', h('code', null, 'index (1).html'), ' 로 저장됩니다.'),
+
+    h('button', { key:'b1', type:'button', className:'btn btn-primary',
+      style:{ width:'100%', padding:'17px', fontSize:'17px' }, onClick:() => generate('member', null) },
+      h('i', { className:'ti ti-users' }), '① 성도용  index.html  내려받기'),
+    h('button', { key:'b2', type:'button', className:'btn btn-primary',
+      style:{ width:'100%', padding:'17px', fontSize:'17px' }, onClick:() => generate('admin', null) },
+      h('i', { className:'ti ti-user-shield' }), '② 안내실·전도인용  index.html  내려받기'),
     msg(genMsg),
     needPick ? h('label', { key:'p', className:'btn btn-ghost',
       style:{ cursor:'pointer', width:'100%', justifyContent:'center' } },
       h('input', { type:'file', accept:'.html,text/html', style:{ display:'none' }, onChange:generateFromPick }),
       '파일 직접 고르기 — 지금 열려 있는 이 HTML') : null,
-    h('div', { key:'w', className:'note note-bad', style:{ fontSize:'15px', lineHeight:1.7 } },
-      h('b', null, '파일 이름을 바꾸지 마세요.'), ' 넷리파이는 ', h('code', null, 'index.html'),
-      ' 을 찾아 첫 화면으로 보여 줍니다.'),
     stack(9,
       h(Task, { key:'g1', done:done.g1, onToggle:() => tick('g1') },
-        h('b', null, '새 폴더를 만들어'), ' 그 안에 ', h('code', null, 'index.html'), ' 을 넣었습니다')),
+        h('b', null, '「성도」 폴더'), '를 만들어 성도용 ', h('code', null, 'index.html'), ' 을 넣었습니다'),
+      h(Task, { key:'g2', done:done.g2, onToggle:() => tick('g2') },
+        h('b', null, '「임원」 폴더'), '를 만들어 안내실·전도인용 ', h('code', null, 'index.html'), ' 을 넣었습니다')),
     h('button', { key:'r', type:'button', className:'btn btn-ghost btn-sm', style:{ width:'100%' },
       onClick:() => downloadText(buildRulesText(finalCfg()), FILE_TAG_OF(cfg) + '_보안규칙.txt') },
       '보안 규칙도 미리 받아 두기')
@@ -11219,19 +11417,26 @@ function SetupWizard({ initial, onClose, startAt }) {
 
   /* 10 · 올리기 */
   S.push(stack(14,
-    h(Head, { key:'h', t:'④ 인터넷에 올리기', s:'폴더를 마우스로 끌어다 놓으면 끝입니다.' }),
+    h(Head, { key:'h', t:'④ 인터넷에 올리기', s:'폴더 두 개를 각각 올려 주소 두 개를 만듭니다.' }),
     h(OpenBtn, { key:'o', href:'https://app.netlify.com/drop' }, '넷리파이 업로드 화면 열기'),
     stack(9,
       h(Task, { key:'u1', done:done.u1, onToggle:() => tick('u1') },
-        h('b', null, '폴더를 점선 사각형 안에 끌어다 놓기'), h('br'),
+        h('b', null, '「성도」 폴더를 점선 사각형 안에 끌어다 놓기'), h('br'),
         h('span', { style:{ fontSize:'14px', color:'var(--text-3)' } }, '파일 하나가 아니라 폴더째로')),
       h(Task, { key:'u2', done:done.u2, onToggle:() => tick('u2') },
         h('b', null, '주소가 만들어졌습니다'), ' — 눌러 보면 로그인 화면이 뜹니다'),
+      h(Task, { key:'u4', done:done.u4, onToggle:() => tick('u4') },
+        h('b', null, '「임원」 폴더도 같은 방법으로 한 번 더'), h('br'),
+        h('span', { style:{ fontSize:'14px', color:'var(--text-3)' } },
+          '넷리파이 첫 화면으로 돌아가 다시 끌어다 놓으면 ★다른 주소★ 가 하나 더 생깁니다')),
       h(Task, { key:'u3', done:done.u3, onToggle:() => tick('u3') },
-        h('b', null, '주소를 짧게 바꾸기'), h('br'),
+        h('b', null, '주소 두 개를 각각 짧게 바꾸기'), h('br'),
         h('span', { style:{ fontSize:'14px', color:'var(--text-3)' } },
           'Site configuration → Site details → Change site name'))
     ),
+    h('div', { key:'s', className:'note note-warn', style:{ fontSize:'14.5px', lineHeight:1.7 } },
+      h('b', null, '임원 주소는 성도들께 알리지 마세요.'),
+      ' 비밀번호가 따로 있어 열리지는 않지만, 애초에 알려지지 않는 편이 안전합니다.'),
     h(More, { key:'m', title:'앞으로 파일을 다시 올릴 때' },
       h('p', null, '같은 사이트의 ', h('b', null, 'Deploys'), ' 탭 아래쪽에 새 폴더를 끌어다 놓으면 ',
         h('b', null, '같은 주소로'), ' 갈아 끼워집니다. 성도들께 주소를 다시 알릴 필요가 없습니다.'))
@@ -11371,7 +11576,7 @@ function FILE_TAG_OF(cfg) {
   return String((cfg && cfg.churchName) || '우리교회').replace(/\s+/g, '_');
 }
 
-
+/*#ADMIN_ONLY_END*/
 function App() {
   /* 설치 전이면 주소록 대신 마법사를 띄운다.
      파이어베이스에 붙지 않았으므로 아래 상태들은 만들지 않는다. */
