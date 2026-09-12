@@ -114,6 +114,10 @@ a{color:inherit}
   justify-content:center; gap:7px; min-width:0;
 }
 .appbar-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 로고·제목을 누르면 로그인 후 첫 화면으로 — 누를 수 있는 곳임을 살짝 알린다 */
+.appbar-title[role="button"]{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;transition:transform .1s,opacity .1s}
+.appbar-title[role="button"]:active{transform:scale(.97);opacity:.85}
+.appbar-title[role="button"]:focus-visible{outline:2px solid rgba(255,255,255,.75);outline-offset:3px;border-radius:10px}
 .appbar-side{display:flex;align-items:center;gap:6px;min-width:76px}
 .appbar-side.right{justify-content:flex-end}
 
@@ -578,6 +582,7 @@ const CHURCH_CFG = {
   "configured": true,
   "churchName": "춘천교회",
   "appTitle": "",
+  "appTitleAdmin": "",
   "shortName": "성도주소록",
   "domain": "chunchonjbch.org",
   "siteMember": "https://ccchurchdir.web.app",
@@ -684,7 +689,11 @@ const IS_CONFIGURED = !!(CHURCH_CFG.configured &&
                          CHURCH_CFG.fb.projectId && CHURCH_CFG.domain);
 
 const CHURCH_NAME = CHURCH_CFG.churchName || '우리교회';
-const APP_TITLE   = CHURCH_CFG.appTitle || (CHURCH_NAME + ' 성도주소록');
+/* 화면 제목은 판마다 다르다 — 성도판 · 임원판.
+   BUILD 는 이 줄보다 아래에서 정해지므로 여기서는 둘 다 만들어 두고,
+   실제로 쓸 APP_TITLE 은 BUILD 줄 바로 다음에서 고른다. */
+const APP_TITLE_MEMBER = CHURCH_CFG.appTitle      || (CHURCH_NAME + ' 성도주소록');
+const APP_TITLE_ADMIN  = CHURCH_CFG.appTitleAdmin || (CHURCH_NAME + ' 임원 활동');
 const SHORT_NAME  = CHURCH_CFG.shortName || '성도주소록';
 /* 내려받는 엑셀 파일 이름에 쓴다 — 공백은 밑줄로 (파일명이 깨지지 않게) */
 const FILE_TAG    = CHURCH_NAME.replace(/\s+/g, '_');
@@ -819,9 +828,12 @@ const BUILD = 'admin'; /* BUILD_TAG — build.py 가 이 줄을 바꿔 쓴다 */
 const SITE_MEMBER = (CHURCH_CFG.siteMember || '').trim();
 const SITE_ADMIN  = (CHURCH_CFG.siteAdmin  || '').trim();
 
-/* 임원판은 창 제목에 '관리'를 붙인다 — 탭을 여럿 열어 두셔도 구분되게.
+/* 화면 제목 — 임원판은 교회 설정의 「임원판 제목」(기본: 교회이름 + ' 임원 활동')을 쓴다.
+   제목 자체가 다르므로 예전처럼 ' · 관리' 를 덧붙이지 않는다.
+   탭을 여럿 열어 두셔도 제목만으로 성도 주소와 임원 주소가 구분된다.
    (제목을 처음 넣는 곳은 이 줄보다 위에 있어 BUILD 를 쓸 수 없다) */
-try { if (BUILD === 'admin' && IS_CONFIGURED) document.title = APP_TITLE + ' · 관리'; } catch(e) {}
+const APP_TITLE = (BUILD === 'admin') ? APP_TITLE_ADMIN : APP_TITLE_MEMBER;
+try { if (BUILD === 'admin' && IS_CONFIGURED) document.title = APP_TITLE; } catch(e) {}
 
 /* 등급 4단계 — v25에서 '임원'이 성도와 안내실 사이에 들어왔다.
 
@@ -4617,11 +4629,21 @@ function Avatar({ member, photos, size=48, ring, src }) {
   }, shown);
 }
 
-function AppBar({ title, icon, left, right, logoUrl }) {
+function AppBar({ title, icon, left, right, logoUrl, onHome }) {
+  /* 가운데 로고·제목 — 누르면 로그인 후 첫 화면(주소록 목록)으로 돌아간다.
+     onHome 이 없는 화면(설치 마법사)에서는 그냥 글씨로만 둔다. */
+  const titleProps = onHome
+    ? { className:'appbar-title', role:'button', tabIndex:0,
+        title:'처음 화면으로', style:{ cursor:'pointer' },
+        onClick: onHome,
+        onKeyDown: e => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onHome(); }
+        } }
+    : { className:'appbar-title' };
   return h('header', { className:'appbar' },
     h('div', { className:'appbar-in' },
       h('div', { className:'appbar-side' }, left),
-      h('div', { className:'appbar-title' },
+      h('div', titleProps,
         logoUrl
           ? h('div', {
               style:{ width:'26px', height:'26px', borderRadius:'7px', background:'#FFFFFF',
@@ -5597,7 +5619,7 @@ function AttPicker({ value, canEdit, onPick, dark, compact }) {
    성도 목록 (이름 전용 초성 검색)
 ═══════════════════════════════════════════════════════ */
 function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle, role, fieldVis,
-                    onAdminPanel, onAttend, attStatus, listCfg, view, setView, scrollRef }) {
+                    onAdminPanel, onAttend, attStatus, listCfg, view, setView, scrollRef, onHome }) {
   /* 검색·필터·스크롤 위치는 App이 들고 있다.
      성도 한 명을 보고 목록으로 돌아와도 보던 자리 그대로 이어진다. */
   const search = view.search, fGu = view.fGu, fSo = view.fSo, fAtt = view.fAtt;
@@ -5756,7 +5778,7 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
 
   return h('div', { className:'screen' },
     h(AppBar, {
-      title:APP_TITLE, icon:'building-church', logoUrl,
+      title:APP_TITLE, icon:'building-church', logoUrl, onHome,
       left: isStaff
         ? h('span', {
             style:{ fontSize:'12px', fontWeight:800, padding:'4px 10px', borderRadius:'999px',
@@ -5765,10 +5787,8 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
           }, (myScope() && myScope().name) || ROLE_LABEL[role])
         : null,
       right: h(React.Fragment, null,
-        /* 출석표 — 임원(구역장)부터. 어르신이 가장 자주 누르실 버튼이므로
-           설정보다 앞(왼쪽)에 둔다. */
-        isLeader && onAttend
-          ? h(NBtn, { onClick:onAttend, icon:'clipboard-check', title:'출석표' }) : null,
+        /* 출석표 아이콘은 상단바에서 뺐다 (1.16) — 화면 가운데의 큰
+           [주일 출석표 열기] 단추가 어르신께 훨씬 잘 보이기 때문이다. */
         /* 관리 화면 — 안내실·전도인 둘 다 들어간다.
            등급은 onAdminPanel 을 넘길 때 이미 가려 두었으므로 여기서 또 보지 않는다. */
         onAdminPanel
@@ -6190,7 +6210,7 @@ function VisitNotes({ member, dark }) {
 /*#ADMIN_ONLY_END*/
 function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate, onPhotoUpdate,
                       isAdmin, theme, toggle, role, fieldVis, visitCfg, listCfg,
-                      attStatus, onAttStatus, family: familyCfg }) {
+                      attStatus, onAttStatus, family: familyCfg, onHome }) {
   const dark   = theme === 'dark';
   const av     = getAv(m, dark);
   const att    = effAtt(m, attStatus);
@@ -6274,7 +6294,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
 
   return h('div', { className:'screen' },
     h(AppBar, {
-      title:'성도 정보', logoUrl,
+      title:'성도 정보', logoUrl, onHome,
       left:  h(NBtn, { onClick:onBack, icon:'arrow-left' }, '목록'),
       right: h(ThemeBtn, { theme, toggle })
     }),
@@ -6502,7 +6522,7 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
    명단별·전체 참석율은 이미 받아 온 문서로 모두 계산한다.
 ═══════════════════════════════════════════════════════ */
 function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAttStatus, listCfg,
-                      onBack, onSelect, theme, toggle }) {
+                      onBack, onSelect, theme, toggle, onHome }) {
   const dark    = theme === 'dark';
   const isAdmin = ROLES[role] >= ROLES.admin;   /* 안내실·전도인은 모든 명단 */
   const canEdit = ROLES[role] >= ROLES.leader;
@@ -6838,6 +6858,8 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   return h('div', { className:'screen' },
     h(AppBar, {
       title: curEvent ? '모임 출석' : '주일 출석표', icon:'clipboard-check', logoUrl,
+      /* 체크하던 것을 먼저 저장하고 첫 화면으로 간다 */
+      onHome: onHome ? (() => { flush(); onHome(); }) : null,
       left:  h(NBtn, { onClick: () => { flush(); onBack(); }, icon:'arrow-left' }, '목록'),
       right: h(ThemeBtn, { theme, toggle })
     }),
@@ -9725,7 +9747,7 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
                      onOpenWizard, role,
                      onBack, onMembersUpdate, onFieldVisUpdate, onVisitCfgUpdate, onListCfgUpdate,
                      onFamilyUpdate, onAttStatus, onAttReload, onAttend,
-                     onPhotoUpdate, onPhotosReset, onLogoUpdate, onPreview, theme, toggle }) {
+                     onPhotoUpdate, onPhotosReset, onLogoUpdate, onPreview, theme, toggle, onHome }) {
   /* ═══ 이 화면은 등급에 따라 둘로 갈린다 (등급 개편) ═══
        안내실 — 데이터 · 사진 · 표시 설정 · 가족 · 비밀번호 · 교회 설정
        전도인 — 출석 · 심방 메모
@@ -9926,12 +9948,13 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
   return h('div', { className:'screen' },
     h(AppBar, {
       title: isLead ? '담당자 화면' : isEvang ? '전도인 관리' : '안내실 관리',
-      icon:'settings', logoUrl,
-      left:  h(NBtn, { onClick:onBack, icon:'arrow-left' }, '나가기'),
-      right: h(React.Fragment, null,
-        h(ThemeBtn, { theme, toggle }),
-        h(NBtn, { onClick:onPreview, icon:'eye', title:'주소록 미리보기' })
-      )
+      icon:'settings', logoUrl, onHome,
+      /* [나가기](로그아웃) 이었던 자리 — 이제 주소록 목록으로 간다 (1.16).
+         로그아웃은 목록 화면 오른쪽 위에 있다. */
+      left:  h(NBtn, { onClick:onPreview, icon:'arrow-left' }, '목록'),
+      /* 눈(주소록 미리보기) 아이콘은 없앴다 (1.16) —
+         왼쪽 위 [목록] 과 가운데 로고·제목이 같은 일을 하므로 셋이나 둘 필요가 없다. */
+      right: h(ThemeBtn, { theme, toggle })
     }),
 
     h('div', {
@@ -10172,8 +10195,9 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
         ),
 
         h('div', { className:'note note-info', style:{ fontSize:'13.5px', lineHeight:1.7 } },
-          '주소록으로 돌아가시려면 위쪽 ', h('b', null, '눈 아이콘'), ' 을 누르세요. ',
-          h('b', null, '나가기'), ' 를 누르면 로그아웃됩니다.')
+          '주소록으로 돌아가시려면 왼쪽 위 ', h('b', null, '[목록]'),
+          ' 이나 맨 위 가운데 ', h('b', null, '제목'), ' 을 누르세요. ',
+          h('b', null, '로그아웃'), ' 은 주소록 목록 오른쪽 위에 있습니다.')
       ),
 
       tab === 'attend' && h(AttendAdmin, {
@@ -11218,6 +11242,7 @@ function SetupWizard({ initial, onClose, startAt }) {
       configured: true,
       churchName: (cfg.churchName || '').trim(),
       appTitle:   (cfg.appTitle || '').trim(),
+      appTitleAdmin: (cfg.appTitleAdmin || '').trim(),
       shortName:  (cfg.shortName || '성도주소록').trim(),
       domain: d,
       icon: cfg.icon || drawDefaultIcon(cfg.brand),   /* ★ 비우면 남의 교회 그림이 남는다 */
@@ -11385,7 +11410,12 @@ function SetupWizard({ initial, onClose, startAt }) {
         '칸 이름에 마우스를 올려도 설명이 뜹니다.'))
   ));
 
-  /* 4 · 교회 이름 */
+  /* 4 · 교회 이름
+     ★ 화면 제목은 ★두 개★ 다 (1.16). 성도 주소와 임원 주소가 나뉘어 있으므로
+       상단 제목과 브라우저 탭 제목도 판마다 따로 정한다.
+       비워 두면 성도판은 '<교회이름> 성도주소록', 임원판은 '<교회이름> 임원 활동'. */
+  const tMember = (cfg.appTitle      || '').trim() || ((cfg.churchName || '군산교회') + ' 성도주소록');
+  const tAdmin  = (cfg.appTitleAdmin || '').trim() || ((cfg.churchName || '군산교회') + ' 임원 활동');
   S.push(stack(14,
     h(Head, { key:'h', t:'③ 교회 이름', s:'로그인 화면과 상단 제목에 나옵니다.' }),
     h(Card, { key:'c', style:{ display:'flex', flexDirection:'column', gap:'16px' } },
@@ -11399,16 +11429,30 @@ function SetupWizard({ initial, onClose, startAt }) {
         h('input', { style:WIZ_INPUT, value:cfg.shortName || '', placeholder:'성도주소록',
           onChange:e => set('shortName', e.target.value) }),
         h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', marginTop:'6px' } },
-          '휴대폰 홈 화면 아이콘 밑에 뜨는 짧은 이름입니다'))
+          '휴대폰 홈 화면 아이콘 밑에 뜨는 짧은 이름입니다')),
+      h('div', null,
+        h('label', { style:{ fontSize:'15px', fontWeight:700, display:'block', marginBottom:'6px' } },
+          '성도판 화면 제목'),
+        h('input', { style:WIZ_INPUT, value:cfg.appTitle || '',
+          placeholder:(cfg.churchName || '군산교회') + ' 성도주소록',
+          onChange:e => set('appTitle', e.target.value) }),
+        h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', marginTop:'6px' } },
+          '성도 주소(주소록)의 상단 제목입니다. 비워 두시면 회색 글씨대로 됩니다')),
+      h('div', null,
+        h('label', { style:{ fontSize:'15px', fontWeight:700, display:'block', marginBottom:'6px' } },
+          '임원판 화면 제목'),
+        h('input', { style:WIZ_INPUT, value:cfg.appTitleAdmin || '',
+          placeholder:(cfg.churchName || '군산교회') + ' 임원 활동',
+          onChange:e => set('appTitleAdmin', e.target.value) }),
+        h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', marginTop:'6px' } },
+          '담당자·안내실·전도인이 쓰는 임원 주소의 상단 제목입니다'))
     ),
-    h('div', { key:'p', style:{ padding:'14px 16px', background:'var(--bar-bg)', color:'#fff',
-                                borderRadius:'12px', fontWeight:800, fontSize:'17px', textAlign:'center' } },
-      (cfg.churchName || '군산교회') + ' 성도주소록'),
-    h(More, { key:'m', title:'제목을 따로 정하고 싶어요' },
-      h('label', { style:{ fontSize:'15px', fontWeight:700, display:'block', marginBottom:'6px' } }, '화면에 나올 제목'),
-      h('input', { style:WIZ_INPUT, value:cfg.appTitle || '',
-        placeholder:(cfg.churchName || '군산교회') + ' 성도주소록',
-        onChange:e => set('appTitle', e.target.value) }))
+    h('div', { key:'p', style:{ display:'flex', flexDirection:'column', gap:'8px' } },
+      [['성도 주소', tMember], ['임원 주소', tAdmin]].map(([who, t]) => h('div', { key:who,
+        style:{ padding:'12px 16px', background:'var(--bar-bg)', color:'#fff',
+                borderRadius:'12px', textAlign:'center' } },
+        h('div', { style:{ fontSize:'12px', fontWeight:700, opacity:.7, marginBottom:'3px' } }, who),
+        h('div', { style:{ fontWeight:800, fontSize:'17px' } }, t))))
   ));
 
   /* 5 · 파이어베이스 연결 */
@@ -11735,7 +11779,7 @@ function SetupWizard({ initial, onClose, startAt }) {
     h(AppBar, {
       title: initial ? '교회 설정 바꾸기' : '성도주소록 설치',
       icon:'wand', logoUrl: cfg.logo || '',
-      left: onClose ? h(NBtn, { onClick:onClose, icon:'arrow-left' }, '나가기') : null,
+      left: onClose ? h(NBtn, { onClick:onClose, icon:'arrow-left' }, '목록') : null,
       right: h(ThemeBtn, { theme, toggle })
     }),
     h(StageBar, { at }),
@@ -11800,6 +11844,11 @@ function FbErrorView({ msg }) {
   );
 }
 
+/* 교회 설정(마법사)에서 왼쪽 위 [목록] 을 눌러 나왔나.
+   마법사 분기는 상태를 만들기 전에 갈라지므로 setPhase 를 바로 부를 수 없다.
+   그래서 표시만 남기고, 아래 useEffect 가 화면을 목록으로 옮긴다. */
+let WIZ_TO_MAIN = false;
+
 function AppReady({ wizard, setWizard }) {
   const [theme, toggle] = useTheme();
 
@@ -11808,7 +11857,11 @@ function AppReady({ wizard, setWizard }) {
      ★ 나갈 때 원래 색을 다시 입힌다 (마법사에서 색을 만졌을 수 있다) */
   if (wizard) return h(SetupWizard, {
     initial: CHURCH_CFG, startAt: 4,
-    onClose: () => { applyBrandColor(CHURCH_CFG.brand || DEFAULT_BRAND); setWizard(false); }
+    onClose: () => {
+      applyBrandColor(CHURCH_CFG.brand || DEFAULT_BRAND);
+      WIZ_TO_MAIN = true;          /* 나가면 주소록 목록으로 */
+      setWizard(false);
+    }
   });
 
   const cachedRole = (() => {
@@ -12065,6 +12118,22 @@ function AppReady({ wizard, setWizard }) {
   /* 화면 안의 [뒤로] 버튼 — 뒤로 가기와 같은 길을 쓴다 */
   const goBack      = () => { const fn = backRef.current; if (fn) fn(); };
 
+  /* ★ 상단 가운데 로고·제목을 누르면 — 로그인 후 첫 화면(주소록 목록)으로.
+
+     어느 화면에 계시든 한 번에 처음 자리로 돌아오시게 하는 길이다.
+     검색어·구역·소속·출석·직분 필터와 스크롤 자리까지 처음 상태로 되돌린다.
+     명단을 서버에서 다시 받지는 않는다 — 기다리는 화면 없이 바로 떠야
+     '새로고침' 이 눌린 느낌이 나기 때문이다. (자료를 다시 받는 길은
+     불러오기 실패 화면의 [다시 받기] 에 따로 있다.) */
+  const goHome = useCallback(() => {
+    clearHist();
+    setSelected(null);
+    setView({ search:'', fGu:'', fSo:'', fAtt:'', fCat:'', limit:60 });
+    listScroll.current = 0;
+    setPhase('main');
+    try { window.scrollTo(0, 0); } catch(e) {}
+  }, [clearHist]);
+
   async function logout() {
     clearHist();
     await signOutAll();
@@ -12131,7 +12200,16 @@ function AppReady({ wizard, setWizard }) {
 
   /* 경과 초·단계 안내는 LoadingView 가 스스로 보여 준다 (위 주석 참고) */
 
-  const tp = { theme, toggle };
+  /* 모든 화면이 함께 받는 것 — 밝기와 [처음 화면으로] */
+  const tp = { theme, toggle, onHome: goHome };
+
+  /* 교회 설정에서 [목록] 으로 나온 직후라면 주소록 목록을 띄운다 */
+  useEffect(() => {
+    if (!WIZ_TO_MAIN) return;
+    WIZ_TO_MAIN = false;
+    setSelected(null);
+    setPhase('main');
+  });
 
   if (phase === 'loading') return h(LoadingView, {
     text:'성도 정보를 불러오는 중...', step,
