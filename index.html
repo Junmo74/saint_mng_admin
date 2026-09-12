@@ -5140,13 +5140,13 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
           : h('i', { className:'ti ti-building-church', style:{ fontSize:'38px', color:'#fff' } })
       ),
 
-      h('p', { style:{ fontSize:'24px', fontWeight:800, letterSpacing:'-.03em', marginBottom:'6px' } }, APP_TITLE),
-
-      /* 임원판은 「비밀번호를 입력해 주세요」 대신 이 한 줄만 둔다 —
-         성도가 잘못 들어오시지 않게, 그리고 화면이 허전하지 않게. */
-      HAS_SEG && h('p', {
-        style:{ fontSize:'13.5px', color:'var(--text-3)', fontWeight:700, margin:'8px 0 26px' }
-      }, '임원 전용'),
+      /* 임원판에는 제목 아래 안내 줄이 없다 (1.16 — 「임원 전용」 한 줄 삭제).
+         그 줄이 차지하던 자리만큼 아래 컨트롤이 위로 올라오도록,
+         비어 보이지 않을 만큼의 아랫여백만 제목에 직접 준다. */
+      h('p', {
+        style:{ fontSize:'24px', fontWeight:800, letterSpacing:'-.03em',
+                marginBottom: HAS_SEG ? '24px' : '6px' }
+      }, APP_TITLE),
 
       /* 통합판의 등급 화면 — 어느 등급으로 들어가는 중인지 */
       HAS_MENU && staff && cur && h('div', { style:{ margin:'10px 0 4px' } },
@@ -5156,7 +5156,7 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
                   border:'1px solid var(--soft-bd)', fontSize:'12.5px', padding:'5px 13px' }
         }, h('i', { className:'ti ti-' + cur.icon, style:{ fontSize:'14px' } }), cur.label + ' 로그인')),
 
-      /* 임원판(HAS_SEG)에서는 위 「임원 전용」 한 줄로 대신하므로 여기를 건너뛴다 */
+      /* 임원판(HAS_SEG)에는 안내 줄을 두지 않는다 — 제목 아랫여백으로 대신한다 */
       !HAS_SEG && h('p', { style:{ fontSize:'15px', color:'var(--text-2)', margin:'8px 0 26px' } },
         '비밀번호를 입력해 주세요'),
 
