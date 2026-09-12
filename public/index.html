@@ -967,7 +967,12 @@ function scopeAllows(scope, m) {
     return !!(d && d.id === scope.gid);
   }
   if (scope.kind === 'gu') {
-    if (deptOf(m)) return false;                 /* 부서에서 체크하는 분 */
+    const d = deptOf(m);
+    /* 부서에서 체크하는 분은 구역 담당자가 손대지 않는다.
+       ★ 다만 담당자 계정이 없는 부서(영유아부·청년·대학부)는 체크를
+         구역에서 하므로 구역 담당자가 손댈 수 있어야 한다 (1.16).
+         primaryGid 의 규칙과 짝을 맞춘 것이다. */
+    if (d && deptHasAccount(d.id)) return false;
     return String(m['구역'] || '').trim() === scope.code;
   }
   return false;
@@ -2461,7 +2466,9 @@ async function fbSetAttStatusBulk(map) {
    순서대로 따집니다
    ────────────────
    ① 전도인이 직접 지정한 명단이 있으면 그곳       (attend/groups.member)
-   ② 소속이 교회학교·영유아면 그 부서              (DEPT_DEFS)
+   ② 소속이 부서에 해당하고 ★그 부서에 담당자 계정이 있으면★ 그 부서
+      (DEPT_DEFS + 교회 설정의 deptAccounts)
+      계정이 없는 부서는 아무도 열지 못하는 명단이 되므로 ★자기 구역★ 에서 체크한다 (1.16)
    ③ 그 밖에는 자기 구역                          (gu_3 …)
    ④ 구역도 소속도 없으면 '미지정'
 
@@ -2494,6 +2501,12 @@ async function fbSetAttStatusBulk(map) {
    · 체크하는 곳 (primaryGid) — 청년부. 구역 명단에는 나오지 않습니다.
    · 통계에 드는 곳 (statGid)  — 자기 구역. 구역 참석율에 함께 잡힙니다.
 
+   ★ 1.16에서 한 가지를 더했습니다 — 부서에 ★담당자 계정이 없으면★
+     체크하는 곳도 자기 구역이 됩니다. 열 사람이 없는 명단에 두면
+     아무도 체크하지 않은 채 구역 참석율 분모만 커지기 때문입니다.
+     그래서 춘천교회에서는 유초등부·중고등부만 따로 남습니다.
+     (DEPT_HAS_ACCOUNT 주석 참고)
+
    교회학교(유초등부·중고등부)와 영유아 아기는 구역 통계에 넣지 않습니다.
    구역은 장년 조직이라 아이들까지 넣으면 구역 참석율의 뜻이 흐려집니다.
 
@@ -2510,6 +2523,33 @@ const KIND_LABEL_X = { gu:'구역', dept:'부서', custom:'별도 명단', none:
 
 const DEPT_BY_ID = {};
 DEPT_DEFS.forEach(d => { DEPT_BY_ID[d.id] = d; });
+
+/* ═══════════════════════════════════════════════════════
+   이 부서에 ★로그인할 담당자 계정★ 이 있나 (정식 1.16)
+
+   교회 설정의 deptAccounts 에 적힌 부서만 로그인 계정이 있다.
+   춘천교회는 유초등부(child@) · 중고등부(teen@) 둘뿐이고,
+   청년·대학부와 영유아부에는 계정이 없다.
+
+   ★ 왜 이걸 따지게 되었나 — 청년이 출석체크에서 통째로 빠졌다
+   청년회·대학부는 소속으로 「청년·대학부」 부서 명단에 잡히므로
+   구역 명단에는 나오지 않는다. 그런데 그 부서로 로그인할 계정이 없으니
+   ★아무도 그 명단을 열지 못했다★. 게다가 청년은 inGu 라 구역 참석율의
+   분모에는 들어가서, 체크는 안 되는데 분모만 커져 구역 참석율이
+   실제보다 낮게 나왔다. 영유아부도 같은 처지였다(계정이 없다).
+
+   그래서 primaryGid 의 규칙을 이렇게 정했다 (사용자 결정 2026-09-12) —
+   ★담당자 계정이 있는 부서만 따로 체크한다. 없는 부서는 자기 구역에서 체크한다.★
+   춘천교회에서는 유초등부(child@)·중고등부(teen@) 둘만 남고,
+   영유아부·청년·대학부 사람은 자기 구역 명단에 함께 나온다.
+   체크하는 곳과 통계에 드는 곳이 같아지므로 구역 참석율도 실제와 맞는다.
+
+   ★ 그래도 따로 체크하고 싶으시면 — 전도인이 관리 화면 [출석] 탭에서
+     그분들을 ★별도 명단★ 으로 지정하면 된다(attend/groups.member 가
+     이 규칙보다 앞선다). 아래 primaryGid 의 ① 을 보라. */
+const DEPT_HAS_ACCOUNT = {};
+Object.keys(DEPT_ACCOUNTS).forEach(k => { DEPT_HAS_ACCOUNT[DEPT_ACCOUNTS[k]] = true; });
+function deptHasAccount(id) { return !!DEPT_HAS_ACCOUNT[id]; }
 
 function normGroups(v) {
   const o = (v && typeof v === 'object') ? v : {};
@@ -2547,9 +2587,14 @@ function primaryGid(m, groups) {
     if (g.list[ov]) return ov;                     /* 별도 명단으로 지정 */
     if (String(ov).indexOf('gu_') === 0) return ov;/* 구역으로 되돌림 */
   }
-  const d = deptOf(m);
-  if (d) return d.id;
+  const d  = deptOf(m);
   const gu = m && m['구역'];
+  if (d) {
+    /* ★ 담당자 계정이 없는 부서는 구역에서 체크한다 (1.16)
+       — 열 사람이 없는 명단을 따로 두지 않는다. DEPT_HAS_ACCOUNT 주석 참고 */
+    if (gu && !deptHasAccount(d.id)) return 'gu_' + gu;
+    return d.id;
+  }
   if (gu) return 'gu_' + gu;
   return 'none';
 }
@@ -12372,7 +12417,9 @@ function SetupWizard({ initial, onClose, startAt }) {
 
     h('div', { key:'i', className:'note note-info', style:{ fontSize:'15px', lineHeight:1.7 } },
       '봉사회 · 어머니회처럼 ', h('b', null, '주일에 본당에서 함께 예배하시는 모임'),
-      '은 부서로 두지 마세요. 구역에서 체크하고, 따로 모이는 날은 나중에 [모임]으로 만드시면 됩니다.')
+      '은 부서로 두지 마세요. 구역에서 체크하고, 따로 모이는 날은 나중에 [모임]으로 만드시면 됩니다.', h('br'),
+      h('b', null, '여기 계정을 만들지 않은 부서'), '는 주일 출석도 ', h('b', null, '자기 구역'),
+      '에서 체크합니다 — 열 사람이 없는 명단을 따로 두지 않기 위해서입니다.')
   ));
 
   /* 9 · 완성 파일 — 성도용 · 안내실전도인용 두 개 */
