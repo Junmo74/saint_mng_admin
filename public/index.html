@@ -5095,10 +5095,11 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
 
       h('p', { style:{ fontSize:'24px', fontWeight:800, letterSpacing:'-.03em', marginBottom:'6px' } }, APP_TITLE),
 
-      /* 임원판은 제목 아래에 여기가 어디인지 한 줄 — 성도가 잘못 들어오시지 않게 */
+      /* 임원판은 「비밀번호를 입력해 주세요」 대신 이 한 줄만 둔다 —
+         성도가 잘못 들어오시지 않게, 그리고 화면이 허전하지 않게. */
       HAS_SEG && h('p', {
-        style:{ fontSize:'13.5px', color:'var(--text-3)', fontWeight:700, marginBottom:'4px' }
-      }, '섬기는 분 전용'),
+        style:{ fontSize:'13.5px', color:'var(--text-3)', fontWeight:700, margin:'8px 0 26px' }
+      }, '임원 전용'),
 
       /* 통합판의 등급 화면 — 어느 등급으로 들어가는 중인지 */
       HAS_MENU && staff && cur && h('div', { style:{ margin:'10px 0 4px' } },
@@ -5108,7 +5109,8 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
                   border:'1px solid var(--soft-bd)', fontSize:'12.5px', padding:'5px 13px' }
         }, h('i', { className:'ti ti-' + cur.icon, style:{ fontSize:'14px' } }), cur.label + ' 로그인')),
 
-      h('p', { style:{ fontSize:'15px', color:'var(--text-2)', margin:'8px 0 26px' } },
+      /* 임원판(HAS_SEG)에서는 위 「임원 전용」 한 줄로 대신하므로 여기를 건너뛴다 */
+      !HAS_SEG && h('p', { style:{ fontSize:'15px', color:'var(--text-2)', margin:'8px 0 26px' } },
         '비밀번호를 입력해 주세요'),
 
       h('div', { style:{ display:'flex', flexDirection:'column', gap:'12px', textAlign:'left' } },
