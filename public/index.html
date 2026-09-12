@@ -1700,12 +1700,26 @@ const REL_PRESETS = [
      ⇒ ★엑셀을 다시 올리면 그 엑셀 내용으로 덮인다★. 화면에도 그렇게 적어 둔다.
 ═══════════════════════════════════════════════════════ */
 const EDIT_FIELDS = [
+  /* 성별은 ★고르는 칸★ 이다 — 손으로 적으면 '남자'·'M' 처럼 제각각이 되는데,
+     가족 호칭(남편·아내·아들·딸)은 이 값이 정확히 '남'·'여' 일 때만 맞는다. */
+  { k:'성별',    label:'성별',    choices:['남','여'],
+                 hint:'가족 호칭(남편·아내·아들·딸)을 정하는 데 쓰입니다' },
   { k:'구원년월', label:'구원년월', hint:'예: 1998.04', mode:'numeric' },
   { k:'집전화',  label:'집전화',   hint:'예: 033-000-0000', mode:'tel' },
   { k:'휴대폰',  label:'휴대폰',   hint:'예: 010-0000-0000', mode:'tel' },
   { k:'주소',    label:'주소',     hint:'동·호수까지 적으시면 가족이 자동으로 묶입니다', area:true },
   { k:'비고',    label:'비고',     hint:'안내실·전도인만 봅니다', area:true }
 ];
+
+/* 적혀 있는 성별을 '남'·'여' 로 맞춘다 (남자·男·M·F 같은 옛 표기까지).
+   알아볼 수 없으면 빈 값 — 가족 호칭 계산이 엉뚱한 값에 속지 않게 한다. */
+function normSex(v) {
+  const t = String(v == null ? '' : v).trim();
+  if (!t) return '';
+  if (/^(남|男|m)/i.test(t)) return '남';
+  if (/^(여|녀|女|f|w)/i.test(t)) return '여';
+  return '';
+}
 
 function projectMembers(members, fieldVis, role) {
   const ok = new Set(ALWAYS_FIELDS);
@@ -6553,7 +6567,9 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
   function openEdit() {
     const o = {};
     EDIT_FIELDS.forEach(f => {
-      o[f.k] = f.k === '구원년월' ? (normYm(m[f.k]) || '') : String(m[f.k] == null ? '' : m[f.k]);
+      o[f.k] = f.k === '구원년월' ? (normYm(m[f.k]) || '')
+             : f.k === '성별'    ? normSex(m[f.k])
+             : String(m[f.k] == null ? '' : m[f.k]);
     });
     setForm(o); setInfoMsg(''); setEditing(true);
   }
@@ -6564,12 +6580,15 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
     const patch = {};
     EDIT_FIELDS.forEach(f => {
       const raw = String(form[f.k] == null ? '' : form[f.k]).trim();
-      patch[f.k] = (f.k === '구원년월') ? (normYm(raw) || '') : raw;
+      patch[f.k] = (f.k === '구원년월') ? (normYm(raw) || '')
+                 : (f.k === '성별')    ? normSex(raw)
+                 : raw;
     });
     /* 바뀐 것이 하나도 없으면 굳이 명단 네 벌을 다시 만들지 않는다 */
     const same = EDIT_FIELDS.every(f => {
       const was = f.k === '구원년월' ? (normYm(m[f.k]) || '')
-                                     : String(m[f.k] == null ? '' : m[f.k]).trim();
+                : f.k === '성별'    ? normSex(m[f.k])
+                : String(m[f.k] == null ? '' : m[f.k]).trim();
       return was === patch[f.k];
     });
     if (same) { setEditing(false); setInfoMsg(''); return; }
@@ -6819,7 +6838,21 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
                   h('i', { className:'ti ti-' + (FIELD_ICONS[f.k] || 'point'),
                            style:{ fontSize:'14px', marginRight:'5px', color:'var(--navy)', opacity:.8 } }),
                   f.label),
-                f.area
+                f.choices
+                  ? h('div', {
+                      className:'seg',
+                      style:{ padding:'3px', gap:'3px', maxWidth:'300px',
+                              opacity: infoBusy ? .6 : 1 }
+                    },
+                      f.choices.concat(['']).map(v => h('button', {
+                        key: v || '__none', type:'button', disabled: infoBusy,
+                        onClick: () => setF(f.k, v),
+                        className: (form[f.k] || '') === v ? 'on' : '',
+                        style:{ fontSize:'14.5px', padding:'9px 3px',
+                                fontWeight: (form[f.k] || '') === v ? 800 : 600 }
+                      }, v || '비움'))
+                    )
+                  : f.area
                   ? h('textarea', {
                       value: form[f.k], rows:3, disabled: infoBusy,
                       placeholder: f.hint,
@@ -6831,7 +6864,9 @@ function DetailView({ member: m, allMembers, photos, logoUrl, onBack, onNavigate
                       placeholder: f.hint,
                       onChange: e => setF(f.k, e.target.value)
                     }),
-                !f.area && h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'5px' } }, f.hint)
+                !f.area && f.hint && h('p', {
+                  style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'5px' }
+                }, f.hint)
               )),
               h('div', { style:{ display:'flex', gap:'8px' } },
                 h('button', {
