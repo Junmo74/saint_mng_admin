@@ -603,8 +603,7 @@ const CHURCH_CFG = {
   "guCodes": ["11","12","13","21","22","23","31","32","33","41","42","43","51","52","61","62"],
   "deptAccounts": {
     "child": "d_child",
-    "teen": "d_teen",
-    "youth": "d_youth"
+    "teen": "d_teen"
   },
   "bands": {
     "kid": [
@@ -4954,13 +4953,24 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
   const [menu, setMenu] = useState(false);
   /* 담당자가 고른 구역·부서 — 기기가 기억한다 (매번 고르지 않게) */
   const [typing, setTyping] = useState(false);   /* 구역 번호를 직접 적는 중인가 */
+  /* 콤보에 「고르세요」 칸이 없으므로, 처음부터 ★맨 위 항목★ 을 고른 상태로 둔다.
+     화면에 보이는 것과 속으로 들고 있는 값이 어긋나면 안 되기 때문이다.
+     지난번에 고르셨던 곳이 있으면 그것이 먼저다. */
   const [lead, setLead] = useState(() => {
-    try { return localStorage.getItem('gsc_lead_code') || ''; } catch(e) { return ''; }
+    let saved = '';
+    try { saved = localStorage.getItem('gsc_lead_code') || ''; } catch(e) {}
+    if (saved) return saved;
+    const gu = (typeof GU_CODES_FIXED !== 'undefined' && GU_CODES_FIXED.length)
+                 ? GU_CODES_FIXED : null;
+    if (gu) return String(gu[0]);
+    const dept = Object.keys(DEPT_ACCOUNTS);
+    return dept.length ? dept[0] : '';
   });
 
   const menuRef = useRef(null);
   const pwdRef  = useRef(null);
 
+  const hasGu = !!(guCodes && guCodes.length);
   const HAS_MENU = (BUILD === 'all');      /* 우측 위 [≡] */
   const HAS_SEG  = (BUILD === 'admin');    /* 세 칸 한꺼번에 */
   const staff    = mode !== 'member';
@@ -5156,9 +5166,10 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
             },
             style:{ fontSize:'16px', fontWeight:700, textAlign:'center' }
           },
-            h('option', { value:'' }, '담당 구역·부서를 고르세요'),
-            h('option', { value:LEAD_ALL }, '전체 명단 (부장·총괄)'),
-            (guCodes && guCodes.length)
+            /* 고르는 칸에는 ★실제로 쓰는 것만★ 둔다.
+               안내 문구·전체 명단 칸은 없앴다 — 담당자는 자기 구역·부서만 고르면 된다.
+               (부장·총괄은 예전대로 「성도」 칸에 임원용 비밀번호를 넣으시면 된다) */
+            hasGu
               ? h('optgroup', { label:'구역' },
                   guCodes.map(c => h('option', { key:c, value:c }, c + '구역')))
               : null,
@@ -5167,7 +5178,8 @@ function LoginView({ onLogin, theme, toggle, logoUrl, guCodes }) {
                 const d = DEPT_BY_ID[DEPT_ACCOUNTS[k]];
                 return h('option', { key:k, value:k }, (d && d.name) || k);
               })),
-            h('option', { value:LEAD_TYPE }, '구역 번호 직접 적기')
+            /* 구역 목록을 아직 안 적은 교회를 위한 비상구 — 우리 교회에는 안 나온다 */
+            hasGu ? null : h('option', { value:LEAD_TYPE }, '구역 번호 직접 적기')
           ),
 
           /* 목록에 없는 구역이거나 목록을 모를 때 — 숫자로 적는다 */
@@ -7247,6 +7259,110 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
 /* ═══════════════════════════════════════════════════════
    사진 관리
 ═══════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════
+   사진 일괄 저장 (안내실 [사진] 탭)
+
+   ★ 왜 길이 둘인가
+   요즘 크롬·엣지(컴퓨터)는 ★폴더를 고르면 그 안에 파일을 바로 쓸 수 있다★
+   (showDirectoryPicker). 그러면 「김규동.jpg」 처럼 이름 그대로 저장된다.
+   사파리·파이어폭스·휴대폰에는 그 기능이 없다. 그때는 한 묶음(zip)으로
+   내려받아 풀어 쓰시게 한다.
+
+   ★ 압축은 하지 않는다 ('store' 방식)
+   사진은 이미 JPEG 로 눌려 있어 다시 눌러도 줄지 않는다.
+   담기만 하면 되므로 바깥 라이브러리 없이 여기서 직접 만든다.
+═══════════════════════════════════════════════════════ */
+const CRC_TABLE = (function() {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+/* data:image/jpeg;base64,... → 바이트 */
+function dataUrlBytes(u) {
+  const i = String(u || '').indexOf(',');
+  if (i < 0) return null;
+  let bin;
+  try { bin = atob(u.slice(i + 1)); } catch(e) { return null; }
+  const out = new Uint8Array(bin.length);
+  for (let k = 0; k < bin.length; k++) out[k] = bin.charCodeAt(k);
+  return out;
+}
+
+function dataUrlExt(u) {
+  const m = /^data:image\/([a-z0-9+.-]+)/i.exec(String(u || ''));
+  const t = (m ? m[1] : 'jpeg').toLowerCase();
+  return (t === 'jpeg' || t === 'jpg') ? 'jpg' : (t === 'svg+xml' ? 'svg' : t);
+}
+
+/* 윈도·맥에서 파일 이름에 못 쓰는 글자를 걷어낸다 */
+function safeFileName(s) {
+  return String(s || '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim() || '이름없음';
+}
+
+/* 사진마다 파일 이름을 정한다 — 성도 이름 그대로, 겹치면 뒤에 번호 */
+function photoFileNames(ids, byId, all) {
+  const used = {}, out = {};
+  ids.forEach(id => {
+    const m = byId[id];
+    const base = m ? safeFileName(String(m['이름'] || '') + String(m['동명이인구분'] || ''))
+                   : ('주인없음_' + id);
+    const ext = dataUrlExt(all[id]);
+    let nm = base + '.' + ext, n = 1;
+    while (used[nm.toLowerCase()]) { n++; nm = base + '_' + n + '.' + ext; }
+    used[nm.toLowerCase()] = 1;
+    out[id] = nm;
+  });
+  return out;
+}
+
+/* 압축 없이 담기만 하는 zip */
+function makeStoreZip(files) {
+  const enc = new TextEncoder();
+  const body = [], dir = [];
+  let off = 0, dirSize = 0;
+  files.forEach(f => {
+    const name = enc.encode(f.name);
+    const crc = crc32(f.data), len = f.data.length;
+
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true);
+    lh.setUint16(6, 0x0800, true);            /* 이름이 UTF-8 이라고 알린다 */
+    lh.setUint16(8, 0, true);                 /* 담기만 함 */
+    lh.setUint16(10, 0, true); lh.setUint16(12, 0x2821, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, len, true); lh.setUint32(22, len, true);
+    lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    body.push(new Uint8Array(lh.buffer), name, f.data);
+
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, 0, true); ch.setUint16(14, 0x2821, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, len, true); ch.setUint32(24, len, true);
+    ch.setUint16(28, name.length, true);
+    ch.setUint32(38, 0, true); ch.setUint32(42, off, true);
+    dir.push(new Uint8Array(ch.buffer), name);
+
+    dirSize += 46 + name.length;
+    off     += 30 + name.length + len;
+  });
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, dirSize, true); end.setUint32(16, off, true);
+  return new Blob(body.concat(dir, [new Uint8Array(end.buffer)]), { type:'application/zip' });
+}
+
 function PhotoManager({ members, photos, onPhotoUpdate, onPhotosReset, dark }) {
   const [delWord,  setDelWord]  = useState('');
   const [delBusy,  setDelBusy]  = useState(false);
@@ -7266,6 +7382,67 @@ function PhotoManager({ members, photos, onPhotoUpdate, onPhotosReset, dark }) {
   const [firstErr,    setFirstErr]    = useState('');
   const abortRef = useRef(false);
   const photoCount = Object.keys(photos || {}).length;
+
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveProg, setSaveProg] = useState({ done:0, total:0 });
+  const [saveMsg,  setSaveMsg]  = useState('');
+
+  /* 저장된 사진을 모두 읽어 성도 이름 그대로 컴퓨터에 저장한다 */
+  async function saveAllPhotos() {
+    if (!confirm('저장된 사진을 모두 읽어 컴퓨터에 저장합니다.\n\n'
+      + '· 사진 수만큼 읽기가 발생합니다 (약 ' + photoCount + '건)\n'
+      + '· 파일 이름은 성도 이름 그대로입니다 (예: 김규동.jpg)\n\n계속할까요?')) return;
+    setSaveBusy(true); setSaveMsg(''); setSaveProg({ done:0, total:0 });
+    try {
+      const all = await fbLoadAllPhotos();
+      const ids = Object.keys(all);
+      if (!ids.length) { setSaveMsg('err:저장된 사진이 없습니다.'); setSaveBusy(false); return; }
+
+      const byId = {};
+      (members || []).forEach(m => { byId[String(m['고유ID'])] = m; });
+      const names = photoFileNames(ids, byId, all);
+      setSaveProg({ done:0, total:ids.length });
+
+      /* ① 폴더를 고를 수 있는 브라우저 — 이름 그대로 바로 쓴다 */
+      if (typeof window !== 'undefined' && window.showDirectoryPicker) {
+        let dir = null;
+        try { dir = await window.showDirectoryPicker({ mode:'readwrite' }); }
+        catch(e) { setSaveMsg('err:폴더를 고르지 않으셨습니다.'); setSaveBusy(false); return; }
+        let ok = 0;
+        for (let i = 0; i < ids.length; i++) {
+          const bytes = dataUrlBytes(all[ids[i]]);
+          if (bytes) {
+            try {
+              const fh = await dir.getFileHandle(names[ids[i]], { create:true });
+              const w  = await fh.createWritable();
+              await w.write(bytes);
+              await w.close();
+              ok++;
+            } catch(e) {}
+          }
+          if (i % 5 === 0 || i === ids.length - 1) setSaveProg({ done:i + 1, total:ids.length });
+        }
+        setSaveMsg('ok:사진 ' + ok + '장을 고르신 폴더에 저장했습니다. 이름은 성도 이름 그대로입니다.');
+      } else {
+        /* ② 그 밖의 브라우저 — 한 묶음으로 내려받는다 */
+        const files = [];
+        ids.forEach(id => {
+          const b = dataUrlBytes(all[id]);
+          if (b) files.push({ name:names[id], data:b });
+        });
+        setSaveProg({ done:ids.length, total:ids.length });
+        const d  = new Date();
+        const ts = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+        const url = URL.createObjectURL(makeStoreZip(files));
+        const a = document.createElement('a');
+        a.href = url; a.download = FILE_TAG + '_사진_' + ts + '.zip';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 8000);
+        setSaveMsg('ok:사진 ' + files.length + '장을 한 묶음으로 내려받았습니다. 압축을 푸시면 이름 그대로 나옵니다.');
+      }
+    } catch(e) { setSaveMsg('err:' + fsErrMsg(e)); }
+    setSaveBusy(false);
+  }
 
   function handleSelect(e) {
     const files = Array.from(e.target.files);
@@ -7432,6 +7609,30 @@ function PhotoManager({ members, photos, onPhotoUpdate, onPhotosReset, dark }) {
             h('p', { style:{ fontSize:'13px', color:'var(--text-2)', marginTop:'4px', fontWeight:600 } }, l)
           ))
       )
+    ),
+
+    h(Card, null,
+      h(SLabel, { icon:'download', text:'사진 일괄 저장' }),
+      h('p', { style:{ fontSize:'13.5px', color:'var(--text-2)', lineHeight:1.75, marginBottom:'12px' } },
+        '올려 둔 사진을 모두 ', h('b', null, '성도 이름 그대로'), ' 컴퓨터에 저장합니다 (예: ',
+        h('code', null, '김규동.jpg'), '). 동명이인은 ', h('code', null, '이한나A.jpg'), ' 처럼 나옵니다.', h('br'),
+        h('span', { style:{ fontSize:'12.5px', color:'var(--text-3)' } },
+          '컴퓨터 크롬·엣지에서는 폴더를 고르면 그 안에 바로 저장되고, ',
+          '그 밖의 브라우저에서는 한 묶음(zip)으로 내려받습니다.')),
+      h('button', {
+        type:'button', onClick:saveAllPhotos, disabled:saveBusy || !photoCount,
+        className:'btn btn-primary btn-block'
+      },
+        saveBusy
+          ? h('span', { className:'spinner', style:{ width:'16px', height:'16px', borderWidth:'2px' } })
+          : h('i', { className:'ti ti-download', style:{ fontSize:'19px' } }),
+        saveBusy
+          ? (saveProg.total ? '저장 중... ' + saveProg.done + ' / ' + saveProg.total : '사진을 읽는 중...')
+          : '사진 ' + photoCount + '장 모두 저장'),
+      saveMsg && h('p', {
+        className: 'note ' + (saveMsg.startsWith('ok:') ? 'note-ok' : 'note-bad'),
+        style:{ marginTop:'10px' }
+      }, saveMsg.slice(saveMsg.indexOf(':') + 1))
     ),
 
     h(Card, null,
@@ -9530,7 +9731,8 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
        전도인 — 출석 · 심방 메모
      계정과 비밀번호는 예전 그대로다. 보이는 탭만 달라진다. */
   const isEvang = role === 'master';
-  const [tab,       setTab]       = useState(isEvang ? 'attend' : 'upload');
+  const isLead  = role === 'leader';          /* 구역·부서 담당자 */
+  const [tab,       setTab]       = useState(isLead ? 'myatt' : isEvang ? 'attend' : 'upload');
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
   const [logoBusy,  setLogoBusy]  = useState(false);
@@ -9700,7 +9902,12 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
     style:{ marginTop:'10px' }
   }, s.slice(s.indexOf(':') + 1)) : null;
 
-  const tabs = isEvang
+  const tabs = isLead
+    ? [
+        ['myatt','출석','clipboard-check'],
+        ['pwd','비밀번호','lock']
+      ]
+    : isEvang
     ? [
         ['attend','출석','clipboard-check'],
         ['visit','심방 메모','notes'],
@@ -9718,7 +9925,8 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
 
   return h('div', { className:'screen' },
     h(AppBar, {
-      title: isEvang ? '전도인 관리' : '안내실 관리', icon:'settings', logoUrl,
+      title: isLead ? '담당자 화면' : isEvang ? '전도인 관리' : '안내실 관리',
+      icon:'settings', logoUrl,
       left:  h(NBtn, { onClick:onBack, icon:'arrow-left' }, '나가기'),
       right: h(React.Fragment, null,
         h(ThemeBtn, { theme, toggle }),
@@ -9935,6 +10143,39 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
         )
       ),
 
+      /* ── 담당자 화면 [출석] — 할 수 있는 일이 하나뿐이라 크게 둔다 ── */
+      tab === 'myatt' && h(React.Fragment, null,
+        h(Card, null,
+          h(SLabel, { icon:'clipboard-check', text:'주일 출석표' }),
+          h('p', { style:{ fontSize:'14px', color:'var(--text-2)', lineHeight:1.75, marginBottom:'14px' } },
+            '맡으신 명단이 바로 열립니다. 날짜를 고르고 나오신 분을 누르시면 됩니다. ',
+            '화면이 먼저 바뀌고 저장은 뒤에서 하므로 기다리실 필요가 없습니다.'),
+          h('button', {
+            type:'button', onClick:onAttend, disabled:!onAttend,
+            className:'btn btn-primary btn-block', style:{ padding:'16px', fontSize:'17px' }
+          }, h('i', { className:'ti ti-clipboard-check', style:{ fontSize:'21px' } }), '출석표 열기')
+        ),
+
+        h(Card, null,
+          h(SLabel, { icon:'users-group', text:'내 담당' }),
+          h('p', { style:{ fontSize:'19px', fontWeight:800, marginBottom:'4px' } },
+            (myScope() && myScope().name) || '전체 명단'),
+          h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)' } },
+            (function() {
+              try {
+                const sc = myScope();
+                const n = sc ? (members || []).filter(mm => scopeAllows(sc, mm)).length
+                             : (members || []).length;
+                return '주소록에 ' + n + '명이 들어 있습니다';
+              } catch(e) { return ''; }
+            })())
+        ),
+
+        h('div', { className:'note note-info', style:{ fontSize:'13.5px', lineHeight:1.7 } },
+          '주소록으로 돌아가시려면 위쪽 ', h('b', null, '눈 아이콘'), ' 을 누르세요. ',
+          h('b', null, '나가기'), ' 를 누르면 로그아웃됩니다.')
+      ),
+
       tab === 'attend' && h(AttendAdmin, {
         members, attStatus, onAttStatus, onAttReload, onAttend, dark
       }),
@@ -10001,7 +10242,20 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
         /* ★ 자기 등급 비밀번호는 자기 화면에서 바꾼다 (등급 개편).
              전도인 비밀번호를 안내실이 바꿀 수 있으면, 안내실 비밀번호를 아는 사람이
              전도인 자리까지 가져갈 수 있다. 그래서 서로의 것을 건드리지 못하게 나눴다. */
-        isEvang
+        isLead
+          ? h(React.Fragment, null,
+              h(PwdCard, {
+                email: (function() {
+                  try { return (_auth && _auth.currentUser && _auth.currentUser.email) || ''; }
+                  catch(e) { return ''; }
+                })(),
+                icon:'lock', title:'내 비밀번호',
+                desc:'지금 로그인하신 담당자 계정의 비밀번호입니다. 바꾸시면 이 화면도 곧 로그아웃되니, 새 비밀번호로 다시 들어오세요.' }),
+              h('div', { className:'note note-info' },
+                h('b', null, '다른 계정의 비밀번호는 바꿀 수 없습니다.'), h('br'),
+                h('span', { style:{ fontSize:'13px', opacity:.9 } },
+                  '잊으셨거나 다른 담당자 계정이 필요하시면 안내실에 말씀해 주세요.')))
+        : isEvang
           ? h(React.Fragment, null,
               h(PwdCard, { role:'master', icon:'notes', title:'전도인 비밀번호',
                            desc:'지금 쓰고 계신 이 비밀번호입니다. 출석표와 심방 메모를 맡습니다. 바꾸시면 이 화면도 곧 로그아웃되니, 새 비밀번호로 다시 들어오세요.' }),
@@ -10120,7 +10374,9 @@ function LeaderAccounts({ members }) {
   );
 }
 
-function PwdCard({ role, icon, title, desc }) {
+/* role 을 주면 그 등급 계정을, email 을 주면 그 계정 하나를 바꾼다.
+   담당자(11@ · child@ …)는 등급 표가 없으므로 email 로 넘긴다. */
+function PwdCard({ role, email, icon, title, desc }) {
   const [cur,  setCur]  = useState('');
   const [a,    setA]    = useState('');
   const [b,    setB]    = useState('');
@@ -10134,7 +10390,8 @@ function PwdCard({ role, icon, title, desc }) {
     if (a.length < 6) { setM('err:6자 이상으로 정해 주세요'); return; }
     setBusy(true);
     try {
-      await changeRolePassword(role, cur, a);
+      if (email) await changeAccountPassword(email, cur, a);
+      else       await changeRolePassword(role, cur, a);
       setM('ok:변경했습니다'); setCur(''); setA(''); setB('');
     } catch(e) { setM('err:' + authErrMsg(e)); }
     setBusy(false);
@@ -11983,7 +12240,7 @@ function AppReady({ wizard, setWizard }) {
     /* 출석표 — 담당자와 전도인만. 안내실은 출석을 다루지 않는다 (등급 개편) */
     onAttend:     (role !== 'admin' && ROLES[role] >= ROLES.leader) ? goAttend : null,
     /* 관리 화면 — 안내실과 전도인이 모두 들어간다. 보이는 탭이 서로 다르다 */
-    onAdminPanel: ROLES[role] >= ROLES.admin ? () => setPhase('admin') : null
+    onAdminPanel: ROLES[role] >= ROLES.leader ? () => setPhase('admin') : null
   });
 }
 
