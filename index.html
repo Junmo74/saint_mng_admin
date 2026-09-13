@@ -6030,7 +6030,6 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
   const isStaff  = ROLES[role] >= ROLES.admin;
   const isLeader = ROLES[role] >= ROLES.leader;   /* 임원부터 = 출석표를 쓸 수 있는 등급 */
   const seeJik   = canSee('직분',    role, fieldVis);
-  const seeCat   = canSee('직분 카테고리', role, fieldVis);
   const seeGu    = canSee('구역',    role, fieldVis);
   const seeSo    = canSee('소속',    role, fieldVis);
   const seeAtt   = canSee('출석상태', role, fieldVis);
@@ -6041,13 +6040,51 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
     [...new Set(members.map(m => m['구역']).filter(Boolean))]
       .sort((a,b) => (parseInt(a,10)||999) - (parseInt(b,10)||999)), [members]);
 
-  /* 필터 선택지는 세부 직분이 아니라 '직분 카테고리'로 만든다.
-     세부 직분은 100가지가 넘어 드롭다운으로 쓸 수 없다.
-     카테고리도 '집사 / 어머니회 / 구역임원'처럼 겸직이 한 칸에 들어오므로
-     쪼갠 낱개를 모으고, 교회에서 정해 주신 순서(CAT_ORDER)로 놓는다. */
-  const uCat = useMemo(() =>
-    sortCats([...new Set(members.flatMap(m => splitRoles(m['직분 카테고리'])))]),
-    [members]);
+  /* ═══ 직분 고르기 (정식 1.16에서 다시 만듦) ═══════════════
+     예전에는 '직분 카테고리' 칸(집사·구역임원·찬양대 …) 여덟 가지로만 골랐다.
+     그런데 교회에서 실제로 찾으시는 것은 「구역장」·「성악부」처럼
+     ★세부 직분★ 이다. 그래서 「직분」 칸을 '/' 로 쪼개
+     ★겹치지 않는 낱개★ 를 모두 선택지로 올린다 (춘천교회 기준 128가지).
+
+     ★ 128가지를 한 줄로 늘어놓으면 찾기 어렵다.
+       그래서 그 직분을 맡으신 분들의 '직분 카테고리' 로 묶어
+       optgroup 으로 나눠 놓는다. 카테고리가 여럿이면 사람이 가장 많은 쪽에 넣어
+       한 직분이 두 번 나오지 않게 한다. 카테고리가 없으면 「그 밖」.
+     ★ 뒤에 인원수를 적어 둔다 — 「구역장 (16)」 처럼 몇 분인지 미리 보인다. */
+  const jikOpts = useMemo(() => {
+    const cnt = {};      /* 직분 → 인원 */
+    const cat = {};      /* 직분 → { 카테고리: 인원 } */
+    members.forEach(m => {
+      const js = splitRoles(m['직분']);
+      if (!js.length) return;
+      const cs = splitRoles(m['직분 카테고리']);
+      js.forEach(j => {
+        cnt[j] = (cnt[j] || 0) + 1;
+        const c = cat[j] || (cat[j] = {});
+        cs.forEach(x => { c[x] = (c[x] || 0) + 1; });
+      });
+    });
+    const ETC = '그 밖';
+    const groups = {};
+    Object.keys(cnt).forEach(j => {
+      const c = cat[j] || {};
+      /* 사람이 가장 많은 카테고리 하나로 보낸다 (같으면 교회에서 정한 차례가 앞선 쪽) */
+      const best = Object.keys(c).sort((a, b) =>
+        (c[b] - c[a]) || (catRank(a) - catRank(b)) || a.localeCompare(b, 'ko'))[0] || ETC;
+      (groups[best] = groups[best] || []).push({ name:j, n:cnt[j] });
+    });
+    /* 직분은 이름 차례로 — 128가지에서는 가나다가 가장 찾기 쉽다.
+       다만 담임목사·장로·집사처럼 교회 차례가 정해진 것은 앞으로 올린다. */
+    Object.keys(groups).forEach(k => groups[k].sort((a, b) => {
+      const ra = JIK_ORDER.indexOf(a.name), rb = JIK_ORDER.indexOf(b.name);
+      const xa = ra === -1 ? 9999 : ra, xb = rb === -1 ? 9999 : rb;
+      return (xa - xb) || a.name.localeCompare(b.name, 'ko');
+    }));
+    const keys = Object.keys(groups).sort((a, b) =>
+      (a === ETC ? 1 : 0) - (b === ETC ? 1 : 0) ||
+      (catRank(a) - catRank(b)) || a.localeCompare(b, 'ko'));
+    return { keys, groups, total: Object.keys(cnt).length };
+  }, [members]);
   const uSo = useMemo(() => {
     const s = [...new Set(members.map(m => m['소속']).filter(Boolean))];
     return s.sort((a,b) => {
@@ -6085,7 +6122,9 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
     if (!fAtt && !listShows(m, attStatus, listCfg, seeAtt)) return false;
     if (fGu && m['구역'] !== fGu) return false;
     if (fSo && m['소속'] !== fSo) return false;
-    if (fCat && splitRoles(m['직분 카테고리']).indexOf(fCat) === -1) return false;
+    /* 직분 — 「직분」 칸을 '/' 로 쪼갠 낱개와 정확히 맞는지 본다 (1.16).
+       '소망부자매차장 / 이삭부반주' 처럼 겸직이어도 각각으로 걸린다. */
+    if (fCat && splitRoles(m['직분']).indexOf(fCat) === -1) return false;
     /* 출석 필터 — 출석A·출석B·미출석은 상태와 맞는지, 전입·전출·구원은 표식이 달렸는지 본다 */
     if (fAtt) {
       const f = effAttFull(m, attStatus);
@@ -6263,11 +6302,13 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
         )
       ),
 
-      /* 직분 칸은 엑셀에 직분 카테고리가 적힌 사람이 있을 때만 나온다 */
-      seeCat && uCat.length > 0 && h('div', { style:{ display:'flex', gap:'8px', marginTop:'8px' } },
+      /* 직분 칸은 엑셀에 직분이 적힌 사람이 있을 때만 나온다 */
+      seeJik && jikOpts.total > 0 && h('div', { style:{ display:'flex', gap:'8px', marginTop:'8px' } },
         h('select', { value:fCat, onChange: e => setFCat(e.target.value), style:{ flex:1, minWidth:0 } },
-          h('option', { value:'' }, '전체 직분'),
-          uCat.map(c => h('option', { key:c, value:c }, c))
+          h('option', { value:'' }, '전체 직분 (' + jikOpts.total + '가지)'),
+          jikOpts.keys.map(k => h('optgroup', { key:k, label:k },
+            jikOpts.groups[k].map(o => h('option', { key:o.name, value:o.name },
+              o.name + ' (' + o.n + ')'))))
         )
       ),
 
