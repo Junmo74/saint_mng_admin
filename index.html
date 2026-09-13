@@ -4775,6 +4775,67 @@ const SO_ORDER = ['봉사회','어머니회','은장회','은빛장년회','청�
    엑셀에 새 직분을 적어도 프로그램을 고칠 필요는 없다. */
 const JIK_ORDER = ['담임목사','부목사','목사','전도사','전도인','장로','권사','집사','서리집사','성도'];
 
+/* ═══════════════════════════════════════════════════════
+   직분을 무리로 묶는 법 (정식 1.16)
+
+   주소록 목록의 「전체 직분」 콤보에는 세부 직분이 128가지쯤 올라온다.
+   한 줄로 늘어놓으면 못 찾으므로 무리로 나눠 놓는데, 그 무리를 이렇게 정한다.
+
+     ① 엑셀 「직분 카테고리」 칸이 적혀 있으면 그대로 쓴다
+     ② 비어 있으면 ★직분 이름★ 으로 알아본다 (아래 규칙표)
+     ③ 이름으로도 모르겠으면 그 부서 사람들의 ★소속★ 에서 가져온다
+        (환경미화부·환경미화부장·환경미화부총무처럼 직함만 다른 것은
+         한 부서로 보고 함께 센다 — jikStem)
+
+   ★ 규칙표는 ★차례가 중요하다★ (먼저 맞는 것이 이긴다)
+     '구역청년장' 은 구역임원이지 청년회가 아니므로 구역 규칙이 앞에 있고,
+     '청년회찬양팀장' 은 찬양대가 아니라 청년회이므로 찬양대 규칙은
+     '찬양대' 라고 붙은 것만 잡는다.
+   ★ 교회마다 부르는 말이 다르면 이 표와 아래 소속 표만 고치면 된다.
+═══════════════════════════════════════════════════════ */
+const JIK_NAME_RULES = [
+  [/(담임목사|부목사|목사|전도사|전도인|장로)/, '전도인'],
+  [/집사/,                                      '집사'],
+  [/(구역|교구|직장[A-Za-z]?조)/,                '구역임원'],
+  [/(찬양대|성악부|기악부|파트장|지휘|피아노반주)/, '찬양대'],
+  [/(유초등부|중고등부|유치부|유년부|초등부|중등부|고등부|영아조|교사)/, '교회학교'],
+  [/(청년|대학부|믿음부|사랑부|소망부|이삭부)/,    '청년회'],
+  [/(은장회|은빛장년)/,                          '은빛장년회'],
+  [/어머니회/,                                   '어머니회'],
+  [/(봉사회|봉사위원회)/,                        '봉사회']
+];
+function jikGroupByName(j) {
+  const t = String(j || '');
+  for (let i = 0; i < JIK_NAME_RULES.length; i++)
+    if (JIK_NAME_RULES[i][0].test(t)) return JIK_NAME_RULES[i][1];
+  return '';
+}
+
+/* 소속 → 무리 이름. 여기 없는 소속은 그 이름을 그대로 무리로 쓴다
+   (봉사회·어머니회·청년회는 이름이 이미 같다). */
+const JIK_SO_GROUP = {
+  '은장회':'은빛장년회', '대학부':'청년회',
+  '유아':'교회학교', '유치부':'교회학교', '유년부':'교회학교',
+  '초등부':'교회학교', '중등부':'교회학교', '고등부':'교회학교'
+};
+
+/* 직함 꼬리를 떼어 부서 이름만 남긴다 — 환경미화부장·환경미화부자매총무 → 환경미화부.
+   같은 부서 사람을 함께 세어 무리를 정하는 데 쓴다. '부'·'팀'·'조' 는 남긴다. */
+const JIK_TAILS = ['자매총무','자매차장','자매부장','총무','서기','회계','차장','교무','반주','장','팀'];
+function jikStem(j) {
+  let t = String(j || '').trim();
+  for (let k = 0; k < 3; k++) {
+    let cut = '';
+    for (let i = 0; i < JIK_TAILS.length; i++) {
+      const w = JIK_TAILS[i];
+      if (t.length > w.length && t.slice(-w.length) === w) { cut = t.slice(0, -w.length); break; }
+    }
+    if (!cut) break;
+    t = cut;
+  }
+  return t || String(j || '').trim();
+}
+
 /* ── 직분 카테고리 순서 ──────────────────────────────────
    세부 직분('(어)조리부 팀장' 같은 것)은 종류가 100가지가 넘어
    드롭다운에 그대로 넣으면 아무도 못 찾는다.
@@ -6046,31 +6107,46 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
      ★세부 직분★ 이다. 그래서 「직분」 칸을 '/' 로 쪼개
      ★겹치지 않는 낱개★ 를 모두 선택지로 올린다 (춘천교회 기준 128가지).
 
-     ★ 128가지를 한 줄로 늘어놓으면 찾기 어렵다.
-       그래서 그 직분을 맡으신 분들의 '직분 카테고리' 로 묶어
-       optgroup 으로 나눠 놓는다. 카테고리가 여럿이면 사람이 가장 많은 쪽에 넣어
-       한 직분이 두 번 나오지 않게 한다. 카테고리가 없으면 「그 밖」.
+     ★ 128가지를 한 줄로 늘어놓으면 찾기 어렵다. 그래서 무리로 나눠(optgroup)
+       놓는데, 그 무리를 정하는 법은 JIK_NAME_RULES 주석에 적어 두었다 —
+       ① 엑셀 카테고리 칸 → ② 직분 이름 규칙 → ③ 그 부서 사람들의 소속.
+       한 직분은 한 무리에만 들어간다.
      ★ 뒤에 인원수를 적어 둔다 — 「구역장 (16)」 처럼 몇 분인지 미리 보인다. */
   const jikOpts = useMemo(() => {
-    const cnt = {};      /* 직분 → 인원 */
-    const cat = {};      /* 직분 → { 카테고리: 인원 } */
+    const cnt = {};       /* 직분 → 인원 */
+    const cat = {};       /* 직분 → { 카테고리: 인원 } */
+    const stem = {};      /* 직분 → 부서 이름(직함 뗀 것) */
+    const stemSo = {};    /* 부서 이름 → { 소속: 인원 } */
     members.forEach(m => {
       const js = splitRoles(m['직분']);
       if (!js.length) return;
       const cs = splitRoles(m['직분 카테고리']);
+      const so = String(m['소속'] || '').trim();
       js.forEach(j => {
         cnt[j] = (cnt[j] || 0) + 1;
         const c = cat[j] || (cat[j] = {});
         cs.forEach(x => { c[x] = (c[x] || 0) + 1; });
+        const st = stem[j] || (stem[j] = jikStem(j));
+        if (so) { const t = stemSo[st] || (stemSo[st] = {}); t[so] = (t[so] || 0) + 1; }
       });
     });
     const ETC = '그 밖';
     const groups = {};
     Object.keys(cnt).forEach(j => {
+      /* ① 엑셀 카테고리 — 여럿이면 사람이 많은 쪽(같으면 교회가 정한 차례) */
       const c = cat[j] || {};
-      /* 사람이 가장 많은 카테고리 하나로 보낸다 (같으면 교회에서 정한 차례가 앞선 쪽) */
-      const best = Object.keys(c).sort((a, b) =>
-        (c[b] - c[a]) || (catRank(a) - catRank(b)) || a.localeCompare(b, 'ko'))[0] || ETC;
+      let best = Object.keys(c).sort((a, b) =>
+        (c[b] - c[a]) || (catRank(a) - catRank(b)) || a.localeCompare(b, 'ko'))[0] || '';
+      /* ② 직분 이름 규칙 */
+      if (!best) best = jikGroupByName(j);
+      /* ③ 같은 부서 사람들의 소속 — 사람이 가장 많은 소속 */
+      if (!best) {
+        const t = stemSo[stem[j]] || {};
+        const so = Object.keys(t).sort((a, b) =>
+          (t[b] - t[a]) || a.localeCompare(b, 'ko'))[0] || '';
+        best = so ? (JIK_SO_GROUP[so] || so) : '';
+      }
+      if (!best) best = ETC;
       (groups[best] = groups[best] || []).push({ name:j, n:cnt[j] });
     });
     /* 직분은 이름 차례로 — 128가지에서는 가나다가 가장 찾기 쉽다.
