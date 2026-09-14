@@ -6300,7 +6300,9 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
         } else if (stats.baby > 0) {
           tiles.push({ l:'영유아', v:stats.baby, c:'var(--violet)' });
         }
-        const cols = statGu ? 3 : tiles.length;
+        /* ★ 한 줄로 놓는다 (정식 1.18). 칸이 다섯 이상이면 글씨를 조금 줄여
+             320px 어르신 휴대폰에서도 '미출석' 과 세 자리 숫자가 잘리지 않게 한다. */
+        const small = tiles.length >= 5;
         /* 구역 담당자께는 어느 구역 숫자인지 한 줄로 밝혀 둔다 —
            아래 「구역」 칸을 다른 구역으로 바꾸셔도 이 숫자는 담당 구역 것이다. */
         return h(React.Fragment, null,
@@ -6309,11 +6311,16 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                     margin:'0 2px 6px', letterSpacing:'-.02em' }
           }, statGu + '구역 기준') : null,
           h('div', { style:{ display:'grid',
-                   gridTemplateColumns:'repeat(' + cols + ',1fr)',
-                   gap:'5px', marginBottom:'12px' } },
-          tiles.map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'11px 2px' } },
-            h('div', { className:'stat-v', style:{ color:c, fontSize:'20px' } }, v),
-            h('div', { className:'stat-l', style:{ fontSize:'11px', letterSpacing:'-.03em' } }, l)
+                   gridTemplateColumns:'repeat(' + tiles.length + ',1fr)',
+                   gap: small ? '4px' : '5px', marginBottom:'12px' } },
+          tiles.map(({l,v,c}) => h('div', { key:l, className:'stat',
+                                            style:{ padding: small ? '9px 1px' : '11px 2px' } },
+            h('div', { className:'stat-v',
+                       style:{ color:c, fontSize: small ? '17px' : '20px',
+                               whiteSpace:'nowrap' } }, v),
+            h('div', { className:'stat-l',
+                       style:{ fontSize: small ? '10.5px' : '11px',
+                               letterSpacing:'-.04em', whiteSpace:'nowrap' } }, l)
           ))));
       })(),
 
@@ -7319,12 +7326,16 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
        그래서 전체는 성도 목록을 한 번만 훑어 따로 구한다. */
   const stats = useMemo(() => {
     const calc = list => {
-      const r = { total:0, target:0, come:0, absent:0, aCnt:0, bCnt:0, baby:0 };
+      const r = { total:0, target:0, come:0, absent:0, aCnt:0, bCnt:0, baby:0, inN:0, saveN:0 };
       list.forEach(m => {
-        const st = effAtt(m, attStatus);
+        const f  = effAttFull(m, attStatus);
+        const st = f.state;
         const on = !!(checks && checks[m['고유ID']]);
         const ex = isAttExempt(m);          /* 영유아 — 출석상태를 매기지 않는다 */
         r.total++;
+        /* 전입·구원은 ★표식★ 이라 영유아께도 달 수 있으므로 먼저 센다 (1.18) */
+        if (f.marks.indexOf('전입') >= 0) r.inN++;
+        if (f.marks.indexOf('구원') >= 0) r.saveN++;
         if (ex) r.baby++;
         else {
           if (st === '출석A')  r.aCnt++;
@@ -7374,6 +7385,8 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
       (parseInt(a, 10) || 9999) - (parseInt(b, 10) || 9999) || a.localeCompare(b, 'ko'));
   }, [members]);
 
+  /* 구역 담당자로 들어오셨나 — 숫자칸 구성을 정하는 데 쓴다 (정식 1.18) */
+  const guScope  = !!(scope && scope.kind === 'gu');
   const talDept  = !!(scope && scope.kind === 'dept');
   const talPicked = scope ? (talDept ? '' : scope.code) : talGid;
   const talList = useMemo(() => {
@@ -7792,20 +7805,36 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                   h('span', { style:{ fontSize:'18px', fontWeight:800, color:'var(--text-3)',
                                       letterSpacing:'-.03em' } }, '/' + myStat.target))
               ),
-              h('div', {
-                style:{ display:'grid',
-                        gridTemplateColumns:'repeat(' + (myStat.baby > 0 ? 4 : 3) + ',1fr)',
-                        gap:'5px', marginTop:'5px' }
-              },
-                [ { l:'출석A',  v:myStat.aCnt,   c:'var(--navy)' },
-                  { l:'출석B',  v:myStat.bCnt,   c:'var(--warn)' },
-                  { l:'미출석', v:myStat.absent, c:'var(--bad)' }
-                ].concat(myStat.baby > 0 ? [{ l:'영유아', v:myStat.baby, c:'var(--violet)' }] : []).map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'10px 2px' } },
-                  h('div', { className:'stat-v',
-                             style:{ color:c, fontSize:'19px', whiteSpace:'nowrap' } }, v),
-                  h('div', { className:'stat-l', style:{ fontSize:'11.5px', letterSpacing:'-.03em' } }, l)
-                ))
-              ),
+              (() => {
+                /* 구역 담당자께는 영유아 대신 전입·구원을 보여 드린다 (정식 1.18) —
+                   주소록 첫 화면 숫자칸과 읽는 법을 똑같이 맞춘 것이다.
+                   부서 담당자·안내실은 예전 그대로 (영유아 칸 포함). */
+                const t = [ { l:'출석A',  v:myStat.aCnt,   c:'var(--navy)' },
+                            { l:'출석B',  v:myStat.bCnt,   c:'var(--warn)' },
+                            { l:'미출석', v:myStat.absent, c:'var(--bad)' } ];
+                if (guScope) {
+                  t.push({ l:'전입', v:myStat.inN,   c:'var(--violet)' });
+                  t.push({ l:'구원', v:myStat.saveN, c:'var(--navy-2)' });
+                } else if (myStat.baby > 0) {
+                  t.push({ l:'영유아', v:myStat.baby, c:'var(--violet)' });
+                }
+                const sm = t.length >= 5;
+                return h('div', {
+                  style:{ display:'grid',
+                          gridTemplateColumns:'repeat(' + t.length + ',1fr)',
+                          gap: sm ? '4px' : '5px', marginTop:'5px' }
+                },
+                  t.map(({l,v,c}) => h('div', { key:l, className:'stat',
+                                                style:{ padding: sm ? '9px 1px' : '10px 2px' } },
+                    h('div', { className:'stat-v',
+                               style:{ color:c, fontSize: sm ? '17px' : '19px',
+                                       whiteSpace:'nowrap' } }, v),
+                    h('div', { className:'stat-l',
+                               style:{ fontSize: sm ? '10.5px' : '11.5px',
+                                       letterSpacing:'-.04em', whiteSpace:'nowrap' } }, l)
+                  ))
+                );
+              })(),
               h('p', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.5 } },
                 '참석 ', h('b', null, myStat.come + '/' + myStat.target),
                 ' 은 ', h('b', null, '그날 오실 분(출석A + 출석B) 중 몇 분이 오셨는지'), ' 입니다. ',
@@ -7989,20 +8018,34 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                     h('span', { style:{ fontSize:'18px', fontWeight:800, color:'var(--text-3)',
                                         letterSpacing:'-.03em' } }, '/' + stats.sum.target))
                 ),
-                h('div', {
-                  style:{ display:'grid',
-                          gridTemplateColumns:'repeat(' + (stats.sum.baby > 0 ? 4 : 3) + ',1fr)',
-                          gap:'5px', marginTop:'5px' }
-                },
-                  [ { l:'출석A',  v:stats.sum.aCnt,   c:'var(--navy)' },
-                    { l:'출석B',  v:stats.sum.bCnt,   c:'var(--warn)' },
-                    { l:'미출석', v:stats.sum.absent, c:'var(--bad)' }
-                  ].concat(stats.sum.baby > 0 ? [{ l:'영유아', v:stats.sum.baby, c:'var(--violet)' }] : []).map(({l,v,c}) => h('div', { key:l, className:'stat', style:{ padding:'10px 2px' } },
-                    h('div', { className:'stat-v',
-                               style:{ color:c, fontSize:'19px', whiteSpace:'nowrap' } }, v),
-                    h('div', { className:'stat-l', style:{ fontSize:'11.5px', letterSpacing:'-.03em' } }, l)
-                  ))
-                ),
+                (() => {
+                  /* 위 「내 명단」 칸과 같은 규칙 — 구역 담당자면 전입·구원 (1.18) */
+                  const t = [ { l:'출석A',  v:stats.sum.aCnt,   c:'var(--navy)' },
+                              { l:'출석B',  v:stats.sum.bCnt,   c:'var(--warn)' },
+                              { l:'미출석', v:stats.sum.absent, c:'var(--bad)' } ];
+                  if (guScope) {
+                    t.push({ l:'전입', v:stats.sum.inN,   c:'var(--violet)' });
+                    t.push({ l:'구원', v:stats.sum.saveN, c:'var(--navy-2)' });
+                  } else if (stats.sum.baby > 0) {
+                    t.push({ l:'영유아', v:stats.sum.baby, c:'var(--violet)' });
+                  }
+                  const sm = t.length >= 5;
+                  return h('div', {
+                    style:{ display:'grid',
+                            gridTemplateColumns:'repeat(' + t.length + ',1fr)',
+                            gap: sm ? '4px' : '5px', marginTop:'5px' }
+                  },
+                    t.map(({l,v,c}) => h('div', { key:l, className:'stat',
+                                                  style:{ padding: sm ? '9px 1px' : '10px 2px' } },
+                      h('div', { className:'stat-v',
+                                 style:{ color:c, fontSize: sm ? '17px' : '19px',
+                                         whiteSpace:'nowrap' } }, v),
+                      h('div', { className:'stat-l',
+                                 style:{ fontSize: sm ? '10.5px' : '11.5px',
+                                         letterSpacing:'-.04em', whiteSpace:'nowrap' } }, l)
+                    ))
+                  );
+                })(),
                 h('p', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'10px', lineHeight:1.55 } },
                   '등록 ' + stats.sum.total + '명. 전체는 성도 한 분을 한 번만 세어 구합니다. ',
                   inGuDepts.length > 0
@@ -11157,13 +11200,24 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
           h(SLabel, { icon:'users-group', text:'내 담당' }),
           h('p', { style:{ fontSize:'19px', fontWeight:800, marginBottom:'4px' } },
             (myScope() && myScope().name) || '전체 명단'),
-          h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)' } },
+          h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', lineHeight:1.65 } },
             (function() {
+              /* ★ 여기 숫자는 ★출석표에서 체크하시는 명단★ 과 똑같아야 한다 (정식 1.18).
+                   전에는 scopeAllows 만 써서 영유아까지 세는 바람에
+                   출석표는 28명인데 이 줄은 31명이라 어긋나 보였다.
+                   구역 담당자가 체크하시는 분은 ★대학생 이상 어른★ 이다 —
+                   유아는 주일 체크를 하지 않고, 유치반 위로는 부서에서 체크한다. */
               try {
                 const sc = myScope();
-                const n = sc ? (members || []).filter(mm => scopeAllows(sc, mm)).length
-                             : (members || []).length;
-                return '주소록에 ' + n + '명이 들어 있습니다';
+                if (!sc) return '주소록에 ' + (members || []).length + '명이 들어 있습니다';
+                const mine = (members || []).filter(mm => scopeAllows(sc, mm));
+                const n    = mine.filter(mm => !isAttExempt(mm)).length;
+                if (sc.kind !== 'gu') return '출석 체크대상 ' + n + '명 입니다';
+                const baby = (members || []).filter(mm =>
+                  String(mm['구역'] || '').trim() === sc.code && isAttExempt(mm)).length;
+                return '출석 체크대상 ' + n + '명 입니다'
+                     + '(' + (baby > 0 ? '유아 ' + baby + '명 제외, ' : '')
+                     + '유치반 이상 교회학교는 부서담당자 체크대상)';
               } catch(e) { return ''; }
             })())
         ),
