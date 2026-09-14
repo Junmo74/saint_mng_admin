@@ -308,8 +308,17 @@ a{color:inherit}
 .alltab tbody tr.alt td,.alltab tbody tr.alt th{background:var(--surface-2)}
 .alltab td .nm{line-height:1.6;font-weight:600}
 .alltab td.e{color:var(--text-3)}
-/* 미출석·전입·구원 이름은 미출석 제목과 같은 색으로 눈에 띄게 */
-.alltab td.warn .nm{color:var(--bad)}
+/* 이름 색은 칸마다 그 항목 제목 색으로 정해 넣는다 (COL 참고) */
+.alltab td .nm{color:inherit}
+/* ── 전체집계2 — 가로·세로를 바꾼 표 ── */
+.alltab.tx{min-width:1000px}
+.alltab.tx thead th{top:0;height:auto}
+.alltab.tx tbody th{white-space:nowrap;min-width:74px}
+/* 항목 덩어리가 끝나는 줄 아래에 「가정 구분선」 색 선 */
+.alltab.tx tbody tr.gsep th,.alltab.tx tbody tr.gsep td{border-bottom:2px solid var(--line)}
+/* 구역 칸을 하나 건너 하나씩 연하게 (세로로 짚어 읽기 쉽게) */
+.alltab.tx th.alt,.alltab.tx td.alt{background:var(--surface-2)}
+.alltab.tx th.sum,.alltab.tx td.sum{background:var(--soft);font-weight:800}
 .alltab tr.sum th,.alltab tr.sum td{background:var(--soft);font-weight:800;font-size:11.5px}
 
 /* ── 입력 ────────────────────────────────────────────── */
@@ -6079,6 +6088,86 @@ function AttPicker({ value, canEdit, onPick, dark, compact, exempt }) {
   );
 }
 
+/* ═══ 전체집계 표 짜기 (정식 1.18) ═══════════════════════
+   [전체집계] 와 [전체집계2] 가 같은 자료를 쓰되 가로·세로만 바꿔 그린다.
+   그래서 세는 일은 여기서 한 번만 하고, 그리는 일만 화면마다 따로 한다.
+
+     · 한 사람은 출석A·출석B·교회학교·영유아·미출석 중 ★한 칸★ 에만 든다
+     · 전입·전출·구원은 표식이라 위 칸과 겹쳐서 또 나온다
+     · 봉사회-봉 · 어머니회-어 · 은장회-은 · 청년회-청 으로 줄여 적는다
+     · 네 회 어디에도 안 드는 분이 계시면 「기」 칸이 저절로 하나 더 생긴다
+═══════════════════════════════════════════════════════ */
+const ALL_HOE = ['봉', '어', '은', '청', '기'];
+function allHoeKey(m) {
+  const so = String((m && m['소속']) || '').trim();
+  if (so === '봉사회')   return '봉';
+  if (so === '어머니회') return '어';
+  if (so === '은장회' || so === '은빛장년회') return '은';
+  if (so === '청년회' || so === '대학부')     return '청';
+  return '기';
+}
+function buildAllTally(members, attStatus, gus) {
+  const ko = (x, y) => x.localeCompare(y, 'ko');
+  const blank = () => {
+    const o = { school:[], baby:[], absent:[], into:[], out:[], saved:[] };
+    ALL_HOE.forEach(k => { o['a' + k] = []; o['b' + k] = []; });
+    return o;
+  };
+  const rows = gus.map(gu => {
+    const list = members.filter(m =>
+      (String(m['구역'] || '').trim() || '미지정') === gu);
+    const c = blank();
+    list.forEach(m => {
+      const f  = effAttFull(m, attStatus);
+      const nm = String(m['이름'] || '').trim();
+      if (f.marks.indexOf('전입') >= 0) c.into.push(nm);
+      if (f.marks.indexOf('전출') >= 0) c.out.push(nm);
+      if (f.marks.indexOf('구원') >= 0) c.saved.push(nm);
+      if (isAttExempt(m)) { c.baby.push(nm); return; }
+      if (f.state === '미출석') { c.absent.push(nm); return; }
+      if (deptOf(m)) { c.school.push(nm); return; }
+      c[(f.state === '출석B' ? 'b' : 'a') + allHoeKey(m)].push(nm);
+    });
+    Object.keys(c).forEach(k => c[k].sort(ko));
+    return { gu, n: list.length, c };
+  });
+  const useEtc = rows.some(r => r.c['a기'].length || r.c['b기'].length);
+  const subs   = useEtc ? ALL_HOE : ALL_HOE.slice(0, 4);
+  const KEYS   = subs.map(k => 'a' + k).concat(subs.map(k => 'b' + k))
+                     .concat(['school', 'baby', 'absent', 'into', 'out', 'saved']);
+  const GROUPS = [
+    { t:'출석A',   c:'var(--ok)',     subs: subs, keys: subs.map(k => 'a' + k) },
+    { t:'출석B',   c:'var(--warn)',   subs: subs, keys: subs.map(k => 'b' + k) },
+    { t:'교회학교', c:'var(--navy-2)', subs: null, keys: ['school'] },
+    { t:'영유아',   c:'var(--violet)', subs: null, keys: ['baby'] },
+    { t:'미출석',   c:'var(--bad)',    subs: null, keys: ['absent'] },
+    { t:'전입',     c:'var(--violet)', subs: null, keys: ['into'] },
+    { t:'전출',     c:'var(--bad)',    subs: null, keys: ['out'] },
+    { t:'구원',     c:'var(--navy-2)', subs: null, keys: ['saved'] }
+  ];
+  /* 칸 → 이름 색 (그 항목 제목과 같은 색) · 칸 → 그 항목의 마지막 칸인가 */
+  const COL = {}, SEP = {}, LABEL = {};
+  GROUPS.forEach((g, gi) => {
+    g.keys.forEach((k, ki) => {
+      COL[k]   = g.c;
+      LABEL[k] = g.subs ? (g.t + ' ' + g.subs[ki]) : g.t;
+      if (ki === g.keys.length - 1 && gi < GROUPS.length - 1) SEP[k] = 1;
+    });
+  });
+  const total = {}; KEYS.forEach(k => { total[k] = 0; });
+  rows.forEach(r => KEYS.forEach(k => { total[k] += r.c[k].length; }));
+  const allN = rows.reduce((s, r) => s + r.n, 0);
+  return { rows, subs, KEYS, GROUPS, COL, SEP, LABEL, total, allN };
+}
+
+/* 이름을 한 줄에 하나씩 쌓은 칸 — 두 표가 함께 쓴다 */
+function allCell(arr, key, color, cls) {
+  return arr.length
+    ? h('td', { key: key, className: cls, style:{ color: color } },
+        arr.map((n, i) => h('div', { key: n + '_' + i, className:'nm' }, n)))
+    : h('td', { key: key, className: (cls ? cls + ' ' : '') + 'e' }, '\u00b7');
+}
+
 /* ═══════════════════════════════════════════════════════
    성도 목록 (이름 전용 초성 검색)
 ═══════════════════════════════════════════════════════ */
@@ -7685,7 +7774,8 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
         .concat(guScope ? [] : [['stat','참석율','chart-bar']])
         .concat([['tally','집계','report-analytics']])
         /* 전도인께만 [전체집계] — 전 구역을 한 표에 펼쳐 보는 자리다 (1.18) */
-        .concat(role === 'master' ? [['all','전체집계','table']] : []).map(([id, lbl, ic]) =>
+        .concat(role === 'master'
+          ? [['all','전체집계','table'], ['all2','전체집계2','table-column']] : []).map(([id, lbl, ic]) =>
         h('button', {
           key:id, type:'button', onClick: () => { flush(); setTab(id); },
           style:{ flex:1, padding:'12px 6px 10px', border:'none', background:'transparent',
@@ -7709,7 +7799,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
       /* ★ [집계]·[전체집계] 에서는 주일 날짜 칸을 감춘다 — 두 집계 모두
            ★지금 등록된 출석상태★ 를 세는 것이라 고른 주일과 상관이 없다.
            남겨 두면 「이 주일의 집계」 로 오해하신다. */
-      tab !== 'tally' && tab !== 'all' && h(Card, null,
+      tab !== 'tally' && tab !== 'all' && tab !== 'all2' && h(Card, null,
         h('div', { style:{ display:'flex', alignItems:'center', gap:'8px' } },
           h('button', {
             type:'button', className:'act', onClick: () => shiftWeek(-1),
@@ -8174,132 +8264,99 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
          ★ 교회학교 학생은 부서에서 체크하지만, 교적 집계라 그 구역 칸에 함께 적는다
            (미출석이면 「미출석 - 학생」 으로 간다). */
       /* ═══ [전체집계] — 가로에 항목, 세로에 구역 (정식 1.18) ═══
-
-         교회 서식 그대로 한 장에 펼친 표다.
-           가로 : 출석A(봉·어·은·청) · 출석B(봉·어·은·청) ·
-                  교회학교 · 영유아 · 미출석 · 전입 · 전출 · 구원
-           세로 : 첫 구역부터 끝 구역까지, 마지막 줄은 합계
-         칸 안에는 그 구역·그 항목에 드는 분 이름을 ★한 줄에 하나씩★ 적는다.
-         봉사회-봉 · 어머니회-어 · 은장회-은 · 청년회-청 으로 줄여 적어
-         열다섯 칸이 한 장에 들어가게 했다 (가로로 밀어 보시면 된다). */
+         교회 서식 그대로 한 장에 펼친 표다. 세는 일은 buildAllTally 가 한다.
+         맨 윗줄(항목)과 왼쪽 구역 칸은 밀어도 제자리에 붙어 있다(틀고정). */
       tab === 'all' && role === 'master' && (() => {
-        const HOE = ['봉', '어', '은', '청', '기'];
-        const hoeKey = m => {
-          const so = String(m['소속'] || '').trim();
-          if (so === '봉사회')   return '봉';
-          if (so === '어머니회') return '어';
-          if (so === '은장회' || so === '은빛장년회') return '은';
-          if (so === '청년회' || so === '대학부')     return '청';
-          return '기';
-        };
-        const blank = () => {
-          const o = { school:[], baby:[], absent:[], into:[], out:[], saved:[] };
-          HOE.forEach(k => { o['a' + k] = []; o['b' + k] = []; });
-          return o;
-        };
-        const ko = (x, y) => x.localeCompare(y, 'ko');
-        const rows = talGus.map(gu => {
-          const list = members.filter(m =>
-            (String(m['구역'] || '').trim() || '미지정') === gu);
-          const c = blank();
-          list.forEach(m => {
-            const f  = effAttFull(m, attStatus);
-            const nm = String(m['이름'] || '').trim();
-            if (f.marks.indexOf('전입') >= 0) c.into.push(nm);
-            if (f.marks.indexOf('전출') >= 0) c.out.push(nm);
-            if (f.marks.indexOf('구원') >= 0) c.saved.push(nm);
-            if (isAttExempt(m)) { c.baby.push(nm); return; }
-            if (f.state === '미출석') { c.absent.push(nm); return; }
-            if (deptOf(m)) { c.school.push(nm); return; }
-            c[(f.state === '출석B' ? 'b' : 'a') + hoeKey(m)].push(nm);
-          });
-          Object.keys(c).forEach(k => c[k].sort(ko));
-          return { gu, n: list.length, c };
-        });
-        /* 「기」 칸은 네 회 어디에도 안 드는 분이 계실 때만 낸다 */
-        const useEtc = rows.some(r => r.c['a기'].length || r.c['b기'].length);
-        const subs   = useEtc ? HOE : HOE.slice(0, 4);
-        const KEYS   = subs.map(k => 'a' + k).concat(subs.map(k => 'b' + k))
-                           .concat(['school', 'baby', 'absent', 'into', 'out', 'saved']);
-        const GROUPS = [
-          { t:'출석A',   c:'var(--ok)',      subs: subs },
-          { t:'출석B',   c:'var(--warn)',    subs: subs },
-          { t:'교회학교', c:'var(--navy-2)', subs: null },
-          { t:'영유아',   c:'var(--violet)', subs: null },
-          { t:'미출석',   c:'var(--bad)',    subs: null },
-          { t:'전입',     c:'var(--violet)', subs: null },
-          { t:'전출',     c:'var(--bad)',    subs: null },
-          { t:'구원',     c:'var(--navy-2)', subs: null }
-        ];
-        /* 항목이 끝나는 칸 — 오른쪽에 「가정 구분선」 색 선을 긋는다 */
-        const SEP = {};
-        const lastSub = subs[subs.length - 1];
-        SEP['a' + lastSub] = 1;
-        SEP['b' + lastSub] = 1;
-        ['school', 'baby', 'absent', 'into', 'out'].forEach(k => { SEP[k] = 1; });
-        /* 미출석·전입·구원 이름은 미출석 제목 색으로 */
-        const WARN = { absent:1, into:1, saved:1 };
-        const cls = (key, extra) => {
-          const a = [];
-          if (SEP[key]) a.push('sep');
-          if (WARN[key]) a.push('warn');
-          if (extra) a.push(extra);
-          return a.join(' ');
-        };
-        const cell = (arr, key) => arr.length
-          ? h('td', { key: key, className: cls(key) }, arr.map((n, i) =>
-              h('div', { key: n + '_' + i, className:'nm' }, n)))
-          : h('td', { key: key, className: cls(key, 'e') }, '\u00b7');
-        const total = {}; KEYS.forEach(k => { total[k] = 0; });
-        rows.forEach(r => KEYS.forEach(k => { total[k] += r.c[k].length; }));
-        const allN = rows.reduce((s, r) => s + r.n, 0);
-
-        return h(React.Fragment, null,
-          h(Card, null,
-            h(SLabel, { icon:'table', text:'전체집계 \u2014 구역별 이름' }),
-            h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', lineHeight:1.65 } },
-              '교회 ', h('b', null, allN + '명'), ' 을 구역 차례로 펼쳤습니다. ',
-              h('b', null, '봉'), '사회 · ', h('b', null, '어'), '머니회 · ',
-              h('b', null, '은'), '장회 · ', h('b', null, '청'), '년회 로 줄여 적었고, ',
-              '칸이 많아 ', h('b', null, '가로·세로로 밀어'), ' 보시면 됩니다 \u2014 ',
-              '맨 윗줄(항목)과 왼쪽 구역 칸은 밀어도 ', h('b', null, '제자리에 붙어'), ' 있습니다. ',
-              '주일 날짜와 상관없이 ', h('b', null, '지금 등록된 출석상태'), ' 를 셉니다.'),
-            h('div', { className:'alltab-wrap', style:{ margin:'10px -4px 0' } },
-              h('table', { className:'alltab' },
-                h('thead', null,
-                  h('tr', null,
-                    h('th', { className:'gu sep', rowSpan:2 }, '구역'),
-                    GROUPS.map((g, gi) => h('th', {
-                      key:g.t, colSpan: g.subs ? g.subs.length : 1,
-                      rowSpan: g.subs ? 1 : 2, style:{ color:g.c },
-                      className: gi < GROUPS.length - 1 ? 'sep' : ''
-                    }, g.t))
-                  ),
-                  h('tr', null,
-                    GROUPS.filter(g => g.subs).map(g =>
-                      g.subs.map((s, si) => h('th', {
-                        key:g.t + s, style:{ color:g.c },
-                        className: si === g.subs.length - 1 ? 'sep' : ''
-                      }, s)))
-                  )
+        const T = buildAllTally(members, attStatus, talGus);
+        return h(Card, null,
+          h(SLabel, { icon:'table', text:'전체집계 \u2014 구역별 이름' }),
+          h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', lineHeight:1.65 } },
+            '교회 ', h('b', null, T.allN + '명'), ' 을 구역 차례로 펼쳤습니다. ',
+            h('b', null, '봉'), '사회 · ', h('b', null, '어'), '머니회 · ',
+            h('b', null, '은'), '장회 · ', h('b', null, '청'), '년회 로 줄여 적었고, ',
+            '칸이 많아 ', h('b', null, '가로·세로로 밀어'), ' 보시면 됩니다 \u2014 ',
+            '맨 윗줄(항목)과 왼쪽 구역 칸은 밀어도 ', h('b', null, '제자리에 붙어'), ' 있습니다. ',
+            '주일 날짜와 상관없이 ', h('b', null, '지금 등록된 출석상태'), ' 를 셉니다.'),
+          h('div', { className:'alltab-wrap', style:{ margin:'10px -4px 0' } },
+            h('table', { className:'alltab' },
+              h('thead', null,
+                h('tr', null,
+                  h('th', { className:'gu sep', rowSpan:2 }, '구역'),
+                  T.GROUPS.map((g, gi) => h('th', {
+                    key:g.t, colSpan: g.subs ? g.subs.length : 1,
+                    rowSpan: g.subs ? 1 : 2, style:{ color:g.c },
+                    className: gi < T.GROUPS.length - 1 ? 'sep' : ''
+                  }, g.t))
                 ),
-                h('tbody', null,
-                  rows.map((r, ri) => h('tr', { key:r.gu, className: ri % 2 ? 'alt' : '' },
-                    h('th', { className:'sep' }, (r.gu === '미지정' ? '미지정' : r.gu + '구역'),
-                      h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
-                        r.n + '명')),
-                    KEYS.map(k => cell(r.c[k], k))
-                  )).concat([
-                    h('tr', { key:'__sum', className:'sum' },
-                      h('th', { className:'sep' }, '합계',
-                        h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
-                          allN + '명')),
-                      KEYS.map(k => h('td', { key:k, className: SEP[k] ? 'sep' : '' }, total[k]))
-                    )
-                  ])
+                h('tr', null,
+                  T.GROUPS.filter(g => g.subs).map(g =>
+                    g.subs.map((s, si) => h('th', {
+                      key:g.t + s, style:{ color:g.c },
+                      className: si === g.subs.length - 1 ? 'sep' : ''
+                    }, s)))
                 )
-              ))
-          )
+              ),
+              h('tbody', null,
+                T.rows.map((r, ri) => h('tr', { key:r.gu, className: ri % 2 ? 'alt' : '' },
+                  h('th', { className:'sep' }, (r.gu === '미지정' ? '미지정' : r.gu + '구역'),
+                    h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
+                      r.n + '명')),
+                  T.KEYS.map(k => allCell(r.c[k], k, T.COL[k], T.SEP[k] ? 'sep' : ''))
+                )).concat([
+                  h('tr', { key:'__sum', className:'sum' },
+                    h('th', { className:'sep' }, '합계',
+                      h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
+                        T.allN + '명')),
+                    T.KEYS.map(k => h('td', {
+                      key:k, className: T.SEP[k] ? 'sep' : '', style:{ color:T.COL[k] }
+                    }, T.total[k]))
+                  )
+                ])
+              )
+            ))
+        );
+      })(),
+
+      /* ═══ [전체집계2] — 위 표의 ★가로·세로를 서로 바꾼 것★ (정식 1.18) ═══
+         가로 : 첫 구역부터 끝 구역까지, 맨 오른쪽이 합계
+         세로 : 출석A(봉·어·은·청) · 출석B(봉·어·은·청) ·
+                교회학교 · 영유아 · 미출석 · 전입 · 전출 · 구원
+         구역 수가 항목 수보다 많은 교회에서는 이쪽이 읽기 편하다.
+         왼쪽 항목 칸과 맨 윗 구역 줄은 밀어도 제자리에 붙어 있다. */
+      tab === 'all2' && role === 'master' && (() => {
+        const T = buildAllTally(members, attStatus, talGus);
+        return h(Card, null,
+          h(SLabel, { icon:'table-column', text:'전체집계2 \u2014 항목별 이름' }),
+          h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', lineHeight:1.65 } },
+            '[전체집계] 와 같은 내용을 ', h('b', null, '가로·세로만 바꿔'), ' 놓은 표입니다 \u2014 ',
+            '가로가 구역, 세로가 항목입니다. 교회 ', h('b', null, T.allN + '명'), '. ',
+            '왼쪽 항목 칸과 맨 윗 구역 줄은 밀어도 ', h('b', null, '제자리에 붙어'), ' 있습니다.'),
+          h('div', { className:'alltab-wrap', style:{ margin:'10px -4px 0' } },
+            h('table', { className:'alltab tx' },
+              h('thead', null,
+                h('tr', null,
+                  h('th', { className:'gu sep' }, '항목'),
+                  T.rows.map((r, ri) => h('th', {
+                    key:r.gu, className: ri % 2 ? 'alt' : ''
+                  }, (r.gu === '미지정' ? '미지정' : r.gu),
+                    h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
+                      r.n + '명'))),
+                  h('th', { key:'__t', className:'sum' }, '합계')
+                )
+              ),
+              h('tbody', null,
+                T.KEYS.map(k => h('tr', {
+                  key:k, className: T.SEP[k] ? 'gsep' : ''
+                },
+                  h('th', { className:'sep', style:{ color:T.COL[k] } }, T.LABEL[k],
+                    h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
+                      T.total[k] + '명')),
+                  T.rows.map((r, ri) =>
+                    allCell(r.c[k], r.gu, T.COL[k], ri % 2 ? 'alt' : '')),
+                  h('td', { key:'__t', className:'sum', style:{ color:T.COL[k] } }, T.total[k])
+                ))
+              )
+            ))
         );
       })(),
 
