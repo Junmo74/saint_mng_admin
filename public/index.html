@@ -286,16 +286,30 @@ a{color:inherit}
    교회에서 쓰시는 종이 서식처럼 ★가로에 항목, 세로에 구역★ 을 놓는다.
    칸이 열다섯이라 글씨를 작게 하고 가로로 밀어 보게 했다.
    왼쪽 「구역」 칸은 밀어도 따라오도록 붙여 둔다(sticky). */
-.alltab{border-collapse:collapse;font-size:11px;min-width:820px}
-.alltab th,.alltab td{border:1px solid var(--border);padding:3px 4px;
-  vertical-align:top;text-align:center;white-space:nowrap}
+/* 표를 담는 상자 — 가로·세로 모두 이 상자 안에서 밀린다.
+   그래야 머리줄과 구역 칸을 ★틀고정★ 할 수 있다 (엑셀의 틀 고정과 같다). */
+.alltab-wrap{overflow:auto;max-height:calc(100vh - 250px);
+  border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);
+  -webkit-overflow-scrolling:touch}
+/* 붙박이(sticky) 칸은 선이 함께 붙어 다니도록 collapse 를 쓰지 않는다 */
+.alltab{border-collapse:separate;border-spacing:0;font-size:11px;min-width:820px}
+.alltab th,.alltab td{padding:3px 4px;vertical-align:top;text-align:center;white-space:nowrap;
+  border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+/* ★ 항목과 항목 사이 — 주소록에서 가정과 가정을 가르는 그 선 색이다 */
+.alltab th.sep,.alltab td.sep{border-right:2px solid var(--line)}
 .alltab thead th{background:var(--surface-2);font-weight:800;font-size:11px;
-  letter-spacing:-.04em;position:sticky;top:0;z-index:2}
+  letter-spacing:-.04em;position:sticky;z-index:2}
+.alltab thead tr:first-child th{top:0;height:22px}
+.alltab thead tr:nth-child(2) th{top:22px;height:20px}
+.alltab thead th.gu{left:0;z-index:4}
 .alltab tbody th{position:sticky;left:0;z-index:1;background:var(--surface);
   text-align:left;font-weight:800;font-size:11.5px;color:var(--text)}
-.alltab thead th.gu{left:0;z-index:3}
+/* 구역 줄을 하나 건너 하나씩 연하게 — 가로로 짚어 읽기 쉽게 */
+.alltab tbody tr.alt td,.alltab tbody tr.alt th{background:var(--surface-2)}
 .alltab td .nm{line-height:1.6;font-weight:600}
 .alltab td.e{color:var(--text-3)}
+/* 미출석·전입·구원 이름은 미출석 제목과 같은 색으로 눈에 띄게 */
+.alltab td.warn .nm{color:var(--bad)}
 .alltab tr.sum th,.alltab tr.sum td{background:var(--soft);font-weight:800;font-size:11.5px}
 
 /* ── 입력 ────────────────────────────────────────────── */
@@ -7692,7 +7706,10 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
       /* ── 날짜 고르기 ───────────────────────────────────
          ★ [집계] 탭에서는 감춘다 — 집계는 지금 등록된 출석상태를 세는 것이라
            고른 주일과 아무 상관이 없다. 남겨 두면 「이 주일의 집계」로 오해하신다. */
-      tab !== 'tally' && h(Card, null,
+      /* ★ [집계]·[전체집계] 에서는 주일 날짜 칸을 감춘다 — 두 집계 모두
+           ★지금 등록된 출석상태★ 를 세는 것이라 고른 주일과 상관이 없다.
+           남겨 두면 「이 주일의 집계」 로 오해하신다. */
+      tab !== 'tally' && tab !== 'all' && h(Card, null,
         h('div', { style:{ display:'flex', alignItems:'center', gap:'8px' } },
           h('button', {
             type:'button', className:'act', onClick: () => shiftWeek(-1),
@@ -8214,10 +8231,25 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
           { t:'전출',     c:'var(--bad)',    subs: null },
           { t:'구원',     c:'var(--navy-2)', subs: null }
         ];
+        /* 항목이 끝나는 칸 — 오른쪽에 「가정 구분선」 색 선을 긋는다 */
+        const SEP = {};
+        const lastSub = subs[subs.length - 1];
+        SEP['a' + lastSub] = 1;
+        SEP['b' + lastSub] = 1;
+        ['school', 'baby', 'absent', 'into', 'out'].forEach(k => { SEP[k] = 1; });
+        /* 미출석·전입·구원 이름은 미출석 제목 색으로 */
+        const WARN = { absent:1, into:1, saved:1 };
+        const cls = (key, extra) => {
+          const a = [];
+          if (SEP[key]) a.push('sep');
+          if (WARN[key]) a.push('warn');
+          if (extra) a.push(extra);
+          return a.join(' ');
+        };
         const cell = (arr, key) => arr.length
-          ? h('td', { key: key }, arr.map((n, i) =>
+          ? h('td', { key: key, className: cls(key) }, arr.map((n, i) =>
               h('div', { key: n + '_' + i, className:'nm' }, n)))
-          : h('td', { key: key, className:'e' }, '\u00b7');
+          : h('td', { key: key, className: cls(key, 'e') }, '\u00b7');
         const total = {}; KEYS.forEach(k => { total[k] = 0; });
         rows.forEach(r => KEYS.forEach(k => { total[k] += r.c[k].length; }));
         const allN = rows.reduce((s, r) => s + r.n, 0);
@@ -8229,35 +8261,40 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
               '교회 ', h('b', null, allN + '명'), ' 을 구역 차례로 펼쳤습니다. ',
               h('b', null, '봉'), '사회 · ', h('b', null, '어'), '머니회 · ',
               h('b', null, '은'), '장회 · ', h('b', null, '청'), '년회 로 줄여 적었고, ',
-              '칸이 많아 ', h('b', null, '가로로 밀어'), ' 보시면 됩니다. ',
-              '왼쪽 구역 칸은 밀어도 따라옵니다.'),
-            h('div', { style:{ overflowX:'auto', margin:'10px -4px 0' } },
+              '칸이 많아 ', h('b', null, '가로·세로로 밀어'), ' 보시면 됩니다 \u2014 ',
+              '맨 윗줄(항목)과 왼쪽 구역 칸은 밀어도 ', h('b', null, '제자리에 붙어'), ' 있습니다. ',
+              '주일 날짜와 상관없이 ', h('b', null, '지금 등록된 출석상태'), ' 를 셉니다.'),
+            h('div', { className:'alltab-wrap', style:{ margin:'10px -4px 0' } },
               h('table', { className:'alltab' },
                 h('thead', null,
                   h('tr', null,
-                    h('th', { className:'gu', rowSpan:2 }, '구역'),
-                    GROUPS.map(g => h('th', {
+                    h('th', { className:'gu sep', rowSpan:2 }, '구역'),
+                    GROUPS.map((g, gi) => h('th', {
                       key:g.t, colSpan: g.subs ? g.subs.length : 1,
-                      rowSpan: g.subs ? 1 : 2, style:{ color:g.c }
+                      rowSpan: g.subs ? 1 : 2, style:{ color:g.c },
+                      className: gi < GROUPS.length - 1 ? 'sep' : ''
                     }, g.t))
                   ),
                   h('tr', null,
                     GROUPS.filter(g => g.subs).map(g =>
-                      g.subs.map(s => h('th', { key:g.t + s, style:{ color:g.c } }, s)))
+                      g.subs.map((s, si) => h('th', {
+                        key:g.t + s, style:{ color:g.c },
+                        className: si === g.subs.length - 1 ? 'sep' : ''
+                      }, s)))
                   )
                 ),
                 h('tbody', null,
-                  rows.map(r => h('tr', { key:r.gu },
-                    h('th', null, (r.gu === '미지정' ? '미지정' : r.gu + '구역'),
+                  rows.map((r, ri) => h('tr', { key:r.gu, className: ri % 2 ? 'alt' : '' },
+                    h('th', { className:'sep' }, (r.gu === '미지정' ? '미지정' : r.gu + '구역'),
                       h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
                         r.n + '명')),
                     KEYS.map(k => cell(r.c[k], k))
                   )).concat([
                     h('tr', { key:'__sum', className:'sum' },
-                      h('th', null, '합계',
+                      h('th', { className:'sep' }, '합계',
                         h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
                           allN + '명')),
-                      KEYS.map(k => h('td', { key:k }, total[k]))
+                      KEYS.map(k => h('td', { key:k, className: SEP[k] ? 'sep' : '' }, total[k]))
                     )
                   ])
                 )
