@@ -7624,8 +7624,12 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
       style:{ background:'var(--surface)', borderBottom:'1px solid var(--border)', display:'flex',
               position:'sticky', top:'calc(var(--bar-h) + env(safe-area-inset-top))', zIndex:20 }
     },
-      [['check','출석 체크','checkbox'], ['stat','참석율','chart-bar'],
-       ['tally','집계','report-analytics']].map(([id, lbl, ic]) =>
+      /* ★ 구역 담당자께는 [참석율] 탭을 두지 않는다 (정식 1.18).
+           구역 담당자는 자기 명단 하나뿐이라 명단끼리 견줄 것이 없고,
+           그 숫자는 [출석 체크] 탭 맨 위 「내 명단」 칸에 이미 나온다. */
+      [['check','출석 체크','checkbox']]
+        .concat(guScope ? [] : [['stat','참석율','chart-bar']])
+        .concat([['tally','집계','report-analytics']]).map(([id, lbl, ic]) =>
         h('button', {
           key:id, type:'button', onClick: () => { flush(); setTab(id); },
           style:{ flex:1, padding:'12px 6px 10px', border:'none', background:'transparent',
@@ -7783,10 +7787,13 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
               h('div', { style:{ display:'flex', alignItems:'baseline', justifyContent:'space-between', marginBottom:'10px' } },
                 h('span', { style:{ fontSize:'16px', fontWeight:800, minWidth:0, overflow:'hidden',
                                     textOverflow:'ellipsis', whiteSpace:'nowrap' } }, myName),
-                h('span', { style:{ fontSize:'26px', fontWeight:800, color:'var(--navy)', letterSpacing:'-.03em', flexShrink:0 } },
-                  pct(myStat.come, myStat.target) + '%')
+                /* 구역 담당자께는 참석율(%)을 적지 않는다 (정식 1.18) —
+                   아래 「참석 N/M」 이 같은 것을 더 쉬운 말로 보여 준다. */
+                guScope ? null
+                  : h('span', { style:{ fontSize:'26px', fontWeight:800, color:'var(--navy)', letterSpacing:'-.03em', flexShrink:0 } },
+                      pct(myStat.come, myStat.target) + '%')
               ),
-              bar(myStat.come, myStat.target, 'var(--navy)'),
+              guScope ? null : bar(myStat.come, myStat.target, 'var(--navy)'),
               /* ★ 참석은 「몇 명 중 몇 명」 을 한 줄로 크게 보여 준다 (정식 1.12).
                    50/59 처럼 나와서 눈에 바로 들어온다.
                    뒷숫자 59 는 출석A + 출석B (참석율의 분모)이다.
@@ -8095,7 +8102,115 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
            영유아  총원
            미출석 · 전입 · 전출 · 구원
          맨 아래에 「등록인원 = 총출석인원 + 미출석」 이 맞는지 한눈에 보인다. */
-      tab === 'tally' && h(React.Fragment, null,
+      /* ═══ 구역 담당자 집계 — 칸마다 ★이름★ 을 적는다 (정식 1.18) ═══
+
+         교회에서 쓰시는 종이 서식 그대로다 —
+           출석A(봉사회·어머니회·은장회·청년회) · 출석B(같은 네 회) ·
+           교회학교 · 영유아 · 미출석(성인·학생) · 전입 · 전출 · 구원.
+         종이는 가로로 길지만 휴대폰에서는 가로 표를 읽을 수 없으므로
+         ★세로로 길게★ 펼쳐 놓았다. 칸마다 그 칸에 드는 분 이름이 들어간다.
+
+         ★ 한 사람은 출석A·출석B·교회학교·영유아·미출석 중 ★한 칸★ 에만 든다.
+           전입·전출·구원은 표식이라 위 칸과 겹쳐서 또 나온다.
+         ★ 교회학교 학생은 부서에서 체크하지만, 교적 집계라 그 구역 칸에 함께 적는다
+           (미출석이면 「미출석 - 학생」 으로 간다). */
+      tab === 'tally' && guScope && (() => {
+        const HOE = ['봉사회', '어머니회', '은장회', '청년회', '그 밖'];
+        const hoeOf = m => {
+          const so = String(m['소속'] || '').trim();
+          if (so === '은장회' || so === '은빛장년회') return '은장회';
+          if (so === '청년회' || so === '대학부')     return '청년회';
+          if (so === '봉사회' || so === '어머니회')   return so;
+          return '그 밖';
+        };
+        const box = { a:{}, b:{}, school:[], baby:[], adultX:[], studentX:[],
+                      into:[], out:[], saved:[] };
+        talList.forEach(m => {
+          const f  = effAttFull(m, attStatus);
+          const nm = String(m['이름'] || '').trim();
+          if (f.marks.indexOf('전입') >= 0) box.into.push(nm);
+          if (f.marks.indexOf('전출') >= 0) box.out.push(nm);
+          if (f.marks.indexOf('구원') >= 0) box.saved.push(nm);
+          if (isAttExempt(m)) { box.baby.push(nm); return; }
+          const student = !!deptOf(m);
+          if (f.state === '미출석') { (student ? box.studentX : box.adultX).push(nm); return; }
+          if (student) { box.school.push(nm); return; }
+          ((f.state === '출석B') ? box.b : box.a)[hoeOf(m)] =
+            (((f.state === '출석B') ? box.b : box.a)[hoeOf(m)] || []).concat([nm]);
+        });
+        const ko = (x, y) => x.localeCompare(y, 'ko');
+        [box.a, box.b].forEach(o => Object.keys(o).forEach(k => o[k].sort(ko)));
+        [box.school, box.baby, box.adultX, box.studentX,
+         box.into, box.out, box.saved].forEach(l => l.sort(ko));
+        const sum = o => HOE.reduce((s, k) => s + ((o[k] || []).length), 0);
+        const aN = sum(box.a), bN = sum(box.b);
+        const xN = box.adultX.length + box.studentX.length;
+        const regN = aN + bN + box.school.length + box.baby.length + xN;
+
+        /* 이름 한 줄 — 왼쪽에 칸 이름과 인원, 오른쪽에 이름을 감싸 넣는다 */
+        const row = (label, arr, col) => h('div', {
+          key: label,
+          style:{ display:'flex', gap:'9px', alignItems:'flex-start',
+                  padding:'9px 0', borderTop:'1px solid var(--border)' }
+        },
+          h('div', { style:{ flex:'0 0 58px', paddingTop:'3px' } },
+            h('div', { style:{ fontSize:'12.5px', fontWeight:800, letterSpacing:'-.04em',
+                               color: col || 'var(--text-2)', whiteSpace:'nowrap' } }, label),
+            h('div', { style:{ fontSize:'11px', fontWeight:700, color:'var(--text-3)' } },
+              arr.length + '명')),
+          h('div', { style:{ flex:1, minWidth:0, display:'flex', flexWrap:'wrap', gap:'4px' } },
+            arr.length
+              ? arr.map((n, i) => h('span', { key:n + '_' + i,
+                  style:{ fontSize:'13.5px', fontWeight:700, padding:'4px 9px',
+                          borderRadius:'999px', background:'var(--soft)',
+                          border:'1px solid var(--soft-bd)', whiteSpace:'nowrap' } }, n))
+              : h('span', { style:{ fontSize:'12.5px', color:'var(--text-3)', paddingTop:'4px' } },
+                  '\u2014'))
+        );
+        const sec = (title, n, col, icon, kids) => h(Card, { key:title },
+          h('div', { style:{ display:'flex', alignItems:'center', gap:'7px' } },
+            h('i', { className:'ti ti-' + icon, style:{ fontSize:'19px', color:col } }),
+            h('span', { style:{ fontSize:'15.5px', fontWeight:800, color:col } }, title),
+            h('span', { style:{ fontSize:'13px', fontWeight:800, color:'var(--text-3)' } },
+              n + '명')),
+          kids
+        );
+        /* 네 회는 비어 있어도 칸을 둔다 (서식과 줄이 맞아야 읽기 쉽다).
+           「그 밖」 은 소속이 비었거나 다른 분이 계실 때만 나온다. */
+        const hoeRows = o => HOE.filter(k => k !== '그 밖' || (o[k] || []).length)
+                               .map(k => row(k, o[k] || [], null));
+        return h(React.Fragment, null,
+          h(Card, { key:'sum' },
+            h(SLabel, { icon:'sum', text: talName + ' \u2014 집계' }),
+            h('p', { style:{ fontSize:'14px', fontWeight:700, lineHeight:1.75 } },
+              '등록 ', h('b', { style:{ fontSize:'17px', color:'var(--navy)' } }, regN + '명'),
+              ' = 출석A ', h('b', { style:{ color:'var(--ok)' } }, aN),
+              ' · 출석B ', h('b', { style:{ color:'var(--warn)' } }, bN),
+              ' · 교회학교 ', h('b', { style:{ color:'var(--navy-2)' } }, box.school.length),
+              ' · 영유아 ', h('b', { style:{ color:'var(--violet)' } }, box.baby.length),
+              ' · 미출석 ', h('b', { style:{ color:'var(--bad)' } }, xN)),
+            h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'8px', lineHeight:1.6 } },
+              '주일 체크와는 다른 숫자입니다. 지금 등록되어 있는 ',
+              h('b', null, '출석상태'), ' 를 칸마다 이름으로 적은 것입니다. ',
+              '엑셀 「구역」 칸 기준이라 그 구역의 교회학교·영유아도 함께 들어갑니다.')),
+          sec('출석A', aN, 'var(--ok)', 'circle-check', hoeRows(box.a)),
+          sec('출석B', bN, 'var(--warn)', 'circle-dashed', hoeRows(box.b)),
+          sec('교회학교', box.school.length, 'var(--navy-2)', 'school',
+              [row('학생', box.school, null)]),
+          sec('영유아', box.baby.length, 'var(--violet)', 'mood-kid',
+              [row('영유아', box.baby, null)]),
+          sec('미출석', xN, 'var(--bad)', 'circle-x',
+              [row('성인', box.adultX, null), row('학생', box.studentX, null)]),
+          sec('전입 · 전출 · 구원',
+              box.into.length + box.out.length + box.saved.length,
+              'var(--navy)', 'bookmark',
+              [row('전입', box.into, 'var(--violet)'),
+               row('전출', box.out, 'var(--bad)'),
+               row('구원', box.saved, 'var(--navy-2)')])
+        );
+      })(),
+
+      tab === 'tally' && !guScope && h(React.Fragment, null,
 
         /* ── 범위 고르기 ── */
         h(Card, null,
