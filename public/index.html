@@ -6335,7 +6335,7 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
       /* 직분 칸은 엑셀에 직분이 적힌 사람이 있을 때만 나온다 */
       seeJik && jikOpts.total > 0 && h('div', { style:{ display:'flex', gap:'8px', marginTop:'8px' } },
         h('select', { value:fCat, onChange: e => setFCat(e.target.value), style:{ flex:1, minWidth:0 } },
-          h('option', { value:'' }, '전체 직분 (' + jikOpts.total + '가지)'),
+          h('option', { value:'' }, '임원 및 봉사자 전체 (' + jikOpts.total + '가지)'),
           jikOpts.rows.map(o => h('option', { key:o.name, value:o.name },
             o.name + ' (' + o.n + ')'))
         )
