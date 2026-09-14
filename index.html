@@ -7216,6 +7216,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   const [tab,    setTab]    = useState('check');
   /* [집계] 탭에서 보고 있는 범위 — '' 은 교회 전체, 아니면 구역(명단) id */
   const [talGid, setTalGid] = useState('');
+  const talInit = useRef(false);        /* 전도인 첫 구역을 한 번만 맞추는 표식 */
   const [openId, setOpenId] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [saveState, setSaveState] = useState('idle');   /* idle | pending | saving | saved */
@@ -7395,6 +7396,22 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   /* 구역 담당자로 들어오셨나 — 숫자칸 구성을 정하는 데 쓴다 (정식 1.18) */
   const guScope  = !!(scope && scope.kind === 'gu');
   const talDept  = !!(scope && scope.kind === 'dept');
+
+  /* ★ [집계] 탭을 ★칸마다 이름을 적는★ 방식으로 볼 분 (정식 1.18)
+       · 구역 담당자 — 자기 구역 하나
+       · 전도인      — 구역을 골라 가며 전 구역
+     안내실은 교회 전체 숫자를 다루므로 예전 숫자 집계를 그대로 쓴다. */
+  const nameTally = guScope || role === 'master';
+  /* 전도인이 [집계] 를 처음 여실 때는 ★첫 구역★ 을 골라 둔다 (정식 1.18).
+     교회 전체로 열면 이름이 오백 개 넘게 쏟아져 읽을 수가 없다.
+     한 번만 맞추고, 그다음 고르신 것은 그대로 둔다. */
+  useEffect(() => {
+    if (talInit.current || scope || role !== 'master') return;
+    if (!talGus.length) return;
+    talInit.current = true;
+    setTalGid(talGus[0]);
+  }, [talGus, role]);
+
   const talPicked = scope ? (talDept ? '' : scope.code) : talGid;
   const talList = useMemo(() => {
     if (talDept)    return members.filter(m => scopeAllows(scope, m));
@@ -8121,7 +8138,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
            전입·전출·구원은 표식이라 위 칸과 겹쳐서 또 나온다.
          ★ 교회학교 학생은 부서에서 체크하지만, 교적 집계라 그 구역 칸에 함께 적는다
            (미출석이면 「미출석 - 학생」 으로 간다). */
-      tab === 'tally' && guScope && (() => {
+      tab === 'tally' && nameTally && (() => {
         const HOE = ['봉사회', '어머니회', '은장회', '청년회', '그 밖'];
         const hoeOf = m => {
           const so = String(m['소속'] || '').trim();
@@ -8187,6 +8204,33 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
         const hoeRows = o => HOE.filter(k => k !== '그 밖' || (o[k] || []).length)
                                .map(k => row(k, o[k] || [], null));
         return h(React.Fragment, null,
+          /* 담당 구역이 없는 분(전도인)께는 구역을 고르는 칸을 드린다 —
+             한 구역씩 넘겨 가며 전 구역을 보실 수 있다. */
+          !scope && h(Card, { key:'pick' },
+            h(SLabel, { icon:'filter', text:'구역 고르기' }),
+            h('select', {
+              value: talGid, onChange: e => setTalGid(e.target.value),
+              style:{ fontSize:'17px', fontWeight:800, textAlign:'center' }
+            },
+              talGus.map(g => h('option', { key:g, value:g },
+                g === '미지정' ? '구역 미지정' : g + '구역')),
+              h('option', { value:'' }, '교회 전체 (이름이 많습니다)')
+            ),
+            h('div', { style:{ display:'flex', gap:'7px', marginTop:'9px' } },
+              [['이전', -1], ['다음', 1]].map(([lbl, d]) => h('button', {
+                key: lbl, type:'button', className:'btn btn-ghost btn-sm',
+                style:{ flex:1 },
+                disabled: !talGid,
+                onClick: () => {
+                  const i = talGus.indexOf(talGid);
+                  if (i < 0) return;
+                  const j = i + d;
+                  if (j >= 0 && j < talGus.length) setTalGid(talGus[j]);
+                }
+              }, lbl + ' 구역'))),
+            h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.6 } },
+              '구역을 고르시면 그 구역의 ', h('b', null, '이름'), ' 이 칸마다 나옵니다. ',
+              '구역 담당자께 보이는 것과 같은 화면입니다.')),
           h(Card, { key:'sum' },
             h(SLabel, { icon:'sum', text: talName + ' \u2014 집계' }),
             h('p', { style:{ fontSize:'14px', fontWeight:700, lineHeight:1.75 } },
@@ -8217,7 +8261,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
         );
       })(),
 
-      tab === 'tally' && !guScope && h(React.Fragment, null,
+      tab === 'tally' && !nameTally && h(React.Fragment, null,
 
         /* ── 범위 고르기 ── */
         h(Card, null,
