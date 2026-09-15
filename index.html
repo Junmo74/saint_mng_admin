@@ -8250,7 +8250,16 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
      영유아에게는 출석A·B·미출석을 잠근다 (영유아는 매기지 않는다). */
   const movePop = movM && (() => {
     const cur    = effAttFull(movM, attStatus);
-    const ex     = isAttExempt(movM);
+    const ex     = isAttExempt(movM);          /* 영유아 */
+    const stu    = !ex && !!deptOf(movM);      /* 교회학교 학생 */
+    /* ★ 영유아와 교회학교 학생은 ★전출만★ 고를 수 있다 (2026-09-15)
+         · 영유아  — 애초에 출석A·출석B·미출석을 매기지 않는다
+         · 학생    — 주일에 부서에서 말씀을 듣고 부서에서 체크한다.
+                     그 출석상태는 부서가 정하는 값이라 구역 집계에서
+                     건드리면 부서가 적어 둔 것을 덮어쓴다.
+         전출은 다르다 — 교회를 떠나신 것은 교적의 일이라
+         그 가정을 아는 구역에서 달아 주는 편이 맞다. */
+    const onlyOut = ex || stu;
     const outNow = cur.marks.indexOf('전출') >= 0;
     const nowOf  = k => (k === '전출') ? outNow : (!outNow && cur.state === k);
     const TONE   = { '출석A':'var(--ok)', '출석B':'var(--warn)',
@@ -8269,7 +8278,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
         h('div', { className:'kpop-grid' },
           ['출석A', '출석B', '미출석', '전출'].map(k => {
             const on  = nowOf(k);
-            const off = ex && k !== '전출';      /* 영유아는 전출만 */
+            const off = onlyOut && k !== '전출';   /* 영유아·교회학교 학생은 전출만 */
             return h('button', {
               key:k, type:'button', className: on ? 'on' : '',
               disabled: movBusy || off,
@@ -8281,8 +8290,12 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
           })),
 
         ex && h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.6 } },
-          h('b', null, '영유아'), ' 는 출석A·출석B·미출석을 매기지 않습니다. 전출만 달 수 있습니다.'),
-        !ex && h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.6 } },
+          h('b', null, '영유아'), ' 는 출석A·출석B·미출석을 매기지 않습니다. ',
+          h('b', null, '전출'), ' 만 달 수 있습니다.'),
+        stu && h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.6 } },
+          h('b', null, '교회학교 학생'), ' 의 출석A·출석B·미출석은 ',
+          h('b', null, '부서에서 정합니다'), '. 여기서는 ', h('b', null, '전출'), ' 만 달 수 있습니다.'),
+        !onlyOut && h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.6 } },
           '누르면 ', h('b', null, '곧바로 저장되고'), ' 이름이 그 칸으로 옮겨 갑니다. ',
           '전입·구원 표식은 그대로 남습니다.'),
 
