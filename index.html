@@ -152,7 +152,8 @@ a{color:inherit}
   background:var(--surface); border:1px solid var(--border);
   border-radius:var(--r-lg); box-shadow:var(--shadow-sm);
   padding:13px 14px; display:flex; align-items:center; gap:13px;
-  cursor:pointer; transition:transform .12s ease,box-shadow .18s ease,border-color .18s ease;
+  cursor:pointer;
+  transition:transform .12s ease,box-shadow .18s ease,border-color .18s ease,background .3s ease;
   position:relative; overflow:hidden;
 }
 .mcard::before{
@@ -160,6 +161,15 @@ a{color:inherit}
   background:var(--stripe,transparent);
 }
 .mcard:active{transform:scale(.985)}
+/* 흩어진 식구를 눌러 그 구역으로 찾아온 자리 (정식 1.19)
+   그 가정이 화면 맨 위로 올라오면서, 누르신 그분 카드만
+   잠깐(2.6초) 은은하게 밝아졌다가 원래대로 돌아간다 —
+   목록이 통째로 바뀐 자리에서 눈이 바로 그분께 닿게 하려는 것이다. */
+.mcard.kinfocus{
+  border-color:var(--navy-3);
+  background:var(--soft);
+  box-shadow:0 0 0 3px var(--soft-bd),var(--shadow);
+}
 @media (hover:hover){ .mcard:hover{box-shadow:var(--shadow-md);border-color:var(--border-2)} }
 
 .mname{font-size:17.5px;font-weight:700;letter-spacing:-.02em;color:var(--text)}
@@ -6874,15 +6884,24 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
 
   /* 얼굴이나 이름을 누르면 그분 구역으로 조회한다.
      구역을 못 보는 등급(성도)이거나 구역이 비어 있으면
-     대신 그분 이름으로 찾아 드린다. */
+     대신 그분 이름으로 찾아 드린다.
+     ★ 조회만 해 드리고 끝내지 않는다 (정식 1.19) — 그 구역에도
+       수십 명이 있어 또 눈으로 찾아 내려가야 하기 때문이다.
+       누구를 찾아왔는지 jumpId 에 적어 두면, 아래 useEffect 가
+       그 가정을 화면 맨 위로 올려 준다. */
+  const [jumpId,  setJumpId]  = useState('');   /* 아직 자리를 못 잡아 드린 분 */
+  const [flashId, setFlashId] = useState('');   /* 잠깐 밝혀 드릴 분 */
+
   const pickKin = useCallback(p => {
     const gu = String(p['구역'] || '').trim();
     const byGu = seeGu && !!gu;
     setView(o => ({ ...o,
       search: byGu ? '' : String(p['이름'] || ''),
       fGu: byGu ? gu : '', fSo:'', fAtt:'', fCat:'', limit:60 }));
-    try { window.scrollTo({ top:0, behavior:'smooth' }); }
-    catch (e) { window.scrollTo(0, 0); }
+    /* 새 목록은 일단 맨 위에서부터 (바뀌는 동안 엉뚱한 자리가 비치지 않게).
+       부드럽게 미는 것은 아래에서 그 가정을 찾은 다음이다. */
+    window.scrollTo(0, 0);
+    setJumpId(String(p['고유ID'] || ''));
   }, [seeGu, setView]);
 
   /* 목록에서 빠진 인원 수 — 임원 이상에게만 알려 준다.
@@ -6921,6 +6940,81 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
     const t = setTimeout(grow, 60);
     return () => { window.removeEventListener('scroll', grow); clearTimeout(t); };
   }, [filtered, renderLimit]);
+
+  /* ═══ 흩어진 식구를 누르셨을 때 자리 잡기 (정식 1.19) ═══
+     그 구역으로 목록이 바뀐 뒤, 그분이 속한 ★한 집★ 의 맨 윗줄이
+     상단바 바로 아래에 오도록 목록을 올려 준다.
+       · 한 집의 첫 줄부터 올린다 — 그 가정이 통째로 눈에 들어와야
+         '이 집 식구구나' 가 한눈에 읽히기 때문이다 (대표부터 차례로 선다)
+       · 붙박이(상단바·구역 머리글)가 가리지 않도록 그 높이만큼 비운다
+       · 목록은 60명씩 이어 그리므로, 아직 안 그려진 자리면 먼저 더 그린다
+       · 감추기 설정 등으로 그 구역 목록에 그분이 없으면 맨 위 그대로 둔다 */
+  useEffect(() => {
+    if (!jumpId) return;
+
+    let idx = -1;
+    for (let i = 0; i < filtered.length; i++) {
+      if (String(filtered[i]['고유ID']) === jumpId) { idx = i; break; }
+    }
+    if (idx < 0) { setJumpId(''); return; }            /* 목록에 없는 분 */
+    if (idx >= renderLimit) {                          /* 아직 안 그린 자리 */
+      setRenderLimit(Math.min(filtered.length, idx + 30));
+      return;                                          /* 더 그린 뒤 다시 들어온다 */
+    }
+
+    /* 그분이 선 자리에서 위로 거슬러, 같은 집의 첫 줄을 찾는다
+       (목록이 가족 덩어리로 놓여 있어 한 집은 늘 붙어 있다) */
+    const hk = p => (famIdx[p['고유ID']] || {}).key || ('S' + p['고유ID']);
+    const key = hk(filtered[idx]);
+    let top = idx;
+    while (top > 0 && hk(filtered[top - 1]) === key) top--;
+    const topId = String(filtered[top]['고유ID']);
+    const meId  = jumpId;
+
+    let n = 0;
+    const put = () => {
+      const cards = document.querySelectorAll('.mcard[data-mid]');
+      let el = null, me = null;
+      for (let i = 0; i < cards.length; i++) {
+        const k = cards[i].getAttribute('data-mid');
+        if (k === topId) el = cards[i];
+        if (k === meId)  me = cards[i];
+      }
+      if (!el) { if (++n < 12) requestAnimationFrame(put); return; }
+
+      const bar = document.querySelector('.appbar');
+      const gh  = document.querySelector('.ghead');
+      const off = (bar ? bar.getBoundingClientRect().height : 0)
+                + (gh  ? gh.getBoundingClientRect().height  : 0) + 6;
+      let y = Math.max(0, el.getBoundingClientRect().top + window.scrollY - off);
+
+      /* 식구가 많아 그 가정이 한 화면에 다 들어가지 않으면,
+         정작 누르신 분이 화면 아래로 밀려 안 보일 수 있다.
+         그럴 때는 그 가정의 첫 줄 대신 ★그분 줄★ 을 위에 놓는다. */
+      if (me) {
+        const r  = me.getBoundingClientRect();
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        const meTop = r.top + window.scrollY;
+        if (vh && (meTop + r.height) - y > vh - 8) y = Math.max(0, meTop - off);
+      }
+      /* 가까우면 스르르, 아주 멀면 곧바로 (오래 미끄러지면 어지럽다) */
+      try {
+        window.scrollTo({ top:y,
+          behavior: Math.abs(y - window.scrollY) > 1200 ? 'auto' : 'smooth' });
+      } catch (e) { window.scrollTo(0, y); }
+    };
+    requestAnimationFrame(put);
+
+    setFlashId(jumpId);
+    setJumpId('');
+  }, [jumpId, filtered, renderLimit, famIdx]);
+
+  /* 밝혀 둔 카드는 잠깐 뒤에 원래 모습으로 */
+  useEffect(() => {
+    if (!flashId) return;
+    const t = setTimeout(() => setFlashId(''), 2600);
+    return () => clearTimeout(t);
+  }, [flashId]);
 
   const renderedList = useMemo(() => filtered.slice(0, renderLimit), [filtered, renderLimit]);
 
@@ -7219,7 +7313,10 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
 
                   const card = h('div', {
                     key: m['고유ID'],
-                    className:'mcard',
+                    /* data-mid — 흩어진 식구를 눌러 찾아왔을 때
+                       이 줄을 화면에서 집어내기 위한 표식이다 */
+                    'data-mid': m['고유ID'],
+                    className:'mcard' + (String(m['고유ID']) === flashId ? ' kinfocus' : ''),
                     style:{ '--stripe': av.bg, cursor: m.__req ? 'default' : '' },
                     /* 등록 요청 줄은 눌러도 상세로 가지 않는다 —
                        아직 주소록에 없는 분이라 고칠 곳이 [성도 등록] 화면이다 */
