@@ -6144,11 +6144,17 @@ function AttBadges({ value, dark, style, exempt }) {
   );
 }
 
-function AttPicker({ value, canEdit, onPick, dark, compact, exempt }) {
+/* marks  — 이 화면에서 달 수 있는 표식만 추려 받는다 (없으면 셋 다).
+            ★ 화면에 안 보이는 표식도 값에는 그대로 남는다 —
+              상태만 바꿀 때 cur.marks 를 통째로 넘기기 때문이다.
+   oneRow — 상태와 표식을 ★한 줄★ 에 놓는다 (표식이 하나일 때 쓴다). */
+function AttPicker({ value, canEdit, onPick, dark, compact, exempt, marks, oneRow }) {
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState('');
   const cur = parseAtt(value);
   const out = cur.marks.indexOf('전출') >= 0;   /* 전출 = 미출석에 묶인다 */
+  const MK  = (marks && marks.length) ? ATT_MARKS.filter(k => marks.indexOf(k) >= 0)
+                                      : ATT_MARKS;
 
   if (!canEdit) {
     return h('div', { className: compact ? '' : 'irow-v' },
@@ -6193,23 +6199,40 @@ function AttPicker({ value, canEdit, onPick, dark, compact, exempt }) {
     padding:'3px', gap:'3px', opacity: busy ? .6 : 1
   };
 
+  const stateBtns = ATT_STATES.map(v => btn(v, cur.state === v, pickState, ATT_BTN_TONE[v], out));
+  const markBtns  = MK.map(k => btn(k, cur.marks.indexOf(k) >= 0, toggleMark, MARK_BTN_TONE[k], false));
+  /* 한 줄 모드에서 상태와 표식 사이에 두는 가느다란 금 —
+     둘은 뜻이 다른 단추라(하나만 고르는 것 / 달았다 떼는 것)
+     나란히 붙여 두면 같은 줄로 읽힌다. */
+  const gap = h('span', { key:'gap', 'aria-hidden':true,
+    style:{ flex:'0 0 1px', alignSelf:'stretch', margin:'4px 3px',
+            background:'var(--border-2)', borderRadius:'1px' } });
+
   return h('div', null,
-    /* ★ 영아·유아·영유아는 상태 단추를 내린다 (isAttExempt 주석 참고) */
-    !exempt && h('div', { className:'seg', style:segStyle },
-      ATT_STATES.map(v => btn(v, cur.state === v, pickState, ATT_BTN_TONE[v], out))
-    ),
-    /* ── 표식 — 여럿을 함께 달 수 있다 ── */
-    h('div', { className:'seg', style:{ ...segStyle, marginTop: exempt ? 0 : '6px' } },
-      ATT_MARKS.map(k => btn(k, cur.marks.indexOf(k) >= 0, toggleMark, MARK_BTN_TONE[k], false))
-    ),
+    oneRow
+      /* ── 한 줄 : 출석A · 출석B · 미출석 | 전출 ── */
+      ? h('div', { className:'seg', style:segStyle },
+          exempt ? null : stateBtns,
+          (!exempt && markBtns.length) ? gap : null,
+          markBtns)
+      : h(React.Fragment, null,
+          /* ★ 영아·유아·영유아는 상태 단추를 내린다 (isAttExempt 주석 참고) */
+          !exempt && h('div', { className:'seg', style:segStyle }, stateBtns),
+          /* ── 표식 — 여럿을 함께 달 수 있다 ── */
+          h('div', { className:'seg', style:{ ...segStyle, marginTop: exempt ? 0 : '6px' } },
+            markBtns)),
     h('p', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'6px', lineHeight:1.55 } },
       exempt
         ? h(React.Fragment, null,
             h('b', null, '영유아'), ' 는 출석A·출석B·미출석을 매기지 않습니다. ',
             '집계에서는 「영유아」 칸에 그대로 들어갑니다. 표식만 달아 두세요.')
-        : h(React.Fragment, null,
-            h('b', null, '전출'), ' 을 켜면 자동으로 ', h('b', null, '미출석'), ' 이 됩니다. ',
-            h('b', null, '전입·구원'), ' 은 출석A·출석B·미출석 어디에나 함께 달 수 있습니다.')),
+        : (MK.length === ATT_MARKS.length
+            ? h(React.Fragment, null,
+                h('b', null, '전출'), ' 을 켜면 자동으로 ', h('b', null, '미출석'), ' 이 됩니다. ',
+                h('b', null, '전입·구원'), ' 은 출석A·출석B·미출석 어디에나 함께 달 수 있습니다.')
+            : h(React.Fragment, null,
+                h('b', null, '전출'), ' 을 켜면 자동으로 ', h('b', null, '미출석'), ' 이 됩니다. ',
+                '다시 누르면 전출만 떨어집니다.'))),
     err && h('p', { className:'note note-bad', style:{ marginTop:'6px', fontSize:'13px' } }, err)
   );
 }
@@ -9108,6 +9131,13 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                           h(AttPicker, {
                             value: attText(st, fl.marks), canEdit: true, dark, compact: true,
                             exempt: ex,
+                            /* ★ 여기는 ★주일에 오셨나★ 를 적는 자리다 (2026-09-15).
+                                 전입·구원은 '언제 교회에 오셨나·구원받으셨나' 를
+                                 적어 두는 표식이라 이 화면에서 달 일이 아니다.
+                                 (성도 정보 화면에서 안내실·전도인이 단다)
+                               ★ 값에는 그대로 남는다 — 상태만 바꾸면 달려 있던
+                                 전입·구원은 손대지 않는다. 배지로도 계속 보인다. */
+                            marks: ['전출'], oneRow: true,
                             /* ★ 바꾸고 나면 이 칸을 닫는다 (정식 1.15)
                                상태가 바뀌면 그 성도의 줄이 다른 묶음으로 옮겨 간다.
                                펼친 칸을 그대로 두면 손가락 아래에서 화면이 출렁인다. */
@@ -9116,10 +9146,12 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                           h('p', {
                             style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'7px', lineHeight:1.5 }
                           }, ex
-                              ? '영유아는 출석상태를 매기지 않습니다. 표식만 저장됩니다.'
+                              ? '영유아는 출석상태를 매기지 않습니다. 전출만 저장됩니다.'
                               : h(React.Fragment, null,
                                   '바꾸시면 ', h('b', null, '출석A → 출석B → 미출석'),
-                                  ' 순서로 줄이 다시 세워집니다. 엑셀을 다시 올려도 유지됩니다.'))
+                                  ' 순서로 줄이 다시 세워집니다. 엑셀을 다시 올려도 유지됩니다.', h('br'),
+                                  h('b', null, '전입·구원'), ' 은 여기서 달지 않습니다 — ',
+                                  '성도 정보 화면에서 답니다.'))
                         )
                       );
                     })
