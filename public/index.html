@@ -272,6 +272,33 @@ a{color:inherit}
 .ghead-line{flex:1;height:1px;background:var(--line)}
 /* 한 집이 끝나는 자리에 긋는 줄 — 위 .ghead-line 과 같은 색(--line)·두께다 */
 .fline{height:1px;background:var(--line);margin:1px 2px}
+
+/* ── 흩어진 식구 띠 (정식 1.19) ──────────────────────────
+   한 가정의 맨 아래에 붙는다. 구역이 다르거나 주소가 달라
+   이 자리에 함께 못 서는 식구를 얼굴과 이름만으로 알려 준다.
+   ★ 오른쪽부터 왼쪽으로 채운다 (row-reverse) — 가정 카드의
+     오른쪽 끝에서 이어지는 꼬리처럼 읽히게. */
+.kinstrip{
+  display:flex; flex-direction:row-reverse; flex-wrap:wrap;
+  justify-content:flex-start; align-items:flex-start;
+  gap:10px 12px; margin:3px 4px 5px; padding:9px 8px 3px;
+  border-top:1px dashed var(--line);
+}
+.kin{
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+  width:54px; padding:0; border:0; background:none; cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.kin-f{
+  width:38px; height:38px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; font-size:20px;
+}
+.kin-t{
+  font-size:11.5px; font-weight:700; color:var(--text-2); line-height:1.25;
+  max-width:54px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.kin:active{transform:scale(.93)}
+@media (hover:hover){ .kin:hover .kin-t{color:var(--navy)} }
 /* 출석표 [집계] 탭의 구역별 표 — 좁은 기기에서는 옆으로 민다 */
 .taltab{border-collapse:collapse;width:100%;min-width:520px;font-size:13px}
 .taltab th,.taltab td{padding:8px 6px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--border)}
@@ -6664,6 +6691,35 @@ function ReqRow({ r, right }) {
     right);
 }
 
+/* ═══ 흩어진 식구 띠 (정식 1.19) ═══════════════════════════
+   가족으로 묶여 있어도 ★구역이 다르거나 주소가 달라★
+   이 가정 자리에 함께 서지 못하는 분들이다.
+   전화·메모 단추도, 전화번호도 없이 ★얼굴과 이름만★ 놓는다 —
+   여기서 전화를 거는 자리가 아니라 '이런 식구가 더 있다' 고
+   알려 주는 자리이기 때문이다.
+   누르면 그분이 계신 구역으로 목록이 다시 조회된다. */
+function KinStrip({ list, photos, dark, onPick }) {
+  return h('div', { className:'kinstrip' },
+    list.map(p => {
+      /* 사진이 없으면 소속 빛깔의 동그라미를 둔다 —
+         Avatar 는 사진이 없을 때 이름을 그리는데, 바로 아래에
+         이름이 또 있어 같은 글씨가 두 번 겹쳐 보이기 때문이다. */
+      const av = getAv(p, dark);
+      return h('button', {
+        key: p['고유ID'], type:'button', className:'kin',
+        title: (String(p['구역'] || '').trim() ? p['구역'] + '구역' : '구역 미지정') + ' 보기',
+        onClick: () => onPick(p)
+      },
+        (photos && photos[p['고유ID']])
+          ? h(Avatar, { member:p, photos, size:38 })
+          : h('span', { className:'kin-f', style:{ background:av.bg, color:av.cl } },
+              h('i', { className:'ti ti-user' })),
+        h('span', { className:'kin-t' }, p['이름'])
+      );
+    })
+  );
+}
+
 /* ═══════════════════════════════════════════════════════
    성도 목록 (이름 전용 초성 검색)
 ═══════════════════════════════════════════════════════ */
@@ -6788,6 +6844,44 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
     }
     return true;
   }).sort(famSort), [listBase, search, fGu, fSo, fAtt, fCat, attStatus, listCfg, seeAtt, famSort]);
+
+  /* ═══ 흩어진 식구 찾기 (정식 1.19) ═══
+     ① famAll — 가족 열쇠(가족번호 또는 집주소)별로 온 식구를 모아 둔다.
+     ② shownIds — 지금 목록에 실제로 나와 있는 분들.
+     가정의 맨 아랫줄에서 ①에서 ②와 '이 구역' 을 빼면
+     구역이 달라·주소가 달라 함께 못 선 식구만 남는다. */
+  const famAll = useMemo(() => {
+    const map = new Map();
+    members.forEach(m => {
+      const c = famIdx[m['고유ID']];
+      if (!c || !c.key) return;
+      if (!map.has(c.key)) map.set(c.key, []);
+      map.get(c.key).push(m);
+    });
+    map.forEach(g => g.sort((a, b) =>
+      ((parseInt(a['구역'], 10) || 999) - (parseInt(b['구역'], 10) || 999)) ||
+      String(a['이름'] || '').localeCompare(String(b['이름'] || ''), 'ko')));
+    return map;
+  }, [members, famIdx]);
+
+  const shownIds = useMemo(() => {
+    const s = {};
+    filtered.forEach(m => { s[m['고유ID']] = 1; });
+    return s;
+  }, [filtered]);
+
+  /* 얼굴이나 이름을 누르면 그분 구역으로 조회한다.
+     구역을 못 보는 등급(성도)이거나 구역이 비어 있으면
+     대신 그분 이름으로 찾아 드린다. */
+  const pickKin = useCallback(p => {
+    const gu = String(p['구역'] || '').trim();
+    const byGu = seeGu && !!gu;
+    setView(o => ({ ...o,
+      search: byGu ? '' : String(p['이름'] || ''),
+      fGu: byGu ? gu : '', fSo:'', fAtt:'', fCat:'', limit:60 }));
+    try { window.scrollTo({ top:0, behavior:'smooth' }); }
+    catch (e) { window.scrollTo(0, 0); }
+  }, [seeGu, setView]);
 
   /* 목록에서 빠진 인원 수 — 임원 이상에게만 알려 준다.
      설정을 켜 둔 것을 잊고 '왜 인원이 줄었지?' 하지 않도록. */
@@ -7102,6 +7196,21 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                   const next    = list[mi + 1];
                   const famEnds = !!next && homeKey(m) !== homeKey(next);
 
+                  /* ★ 흩어진 식구 (정식 1.19) — 이 가정의 맨 아랫줄에서만 센다.
+                       · 이 구역에 함께 서 있는 식구는 뺀다
+                       · 전출·미출석 감추기 설정으로 가린 분도 뺀다
+                         (목록에서 감춰 놓고 여기서만 보이면 어긋나 보인다) */
+                  const famKey  = (famIdx[m['고유ID']] || {}).key || '';
+                  const lastOne = !next || homeKey(m) !== homeKey(next);
+                  const kin = (lastOne && famKey)
+                    ? (famAll.get(famKey) || []).filter(p => {
+                        if (p['고유ID'] === m['고유ID']) return false;
+                        const pg = String(p['구역'] || '').trim() || '미지정';
+                        if (pg === gu && shownIds[p['고유ID']]) return false;
+                        return listShows(p, attStatus, listCfg, seeAtt);
+                      })
+                    : [];
+
                   const card = h('div', {
                     key: m['고유ID'],
                     className:'mcard',
@@ -7156,8 +7265,11 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                     h(CallActions, { phone })
                   );
 
-                  return famEnds
-                    ? h(React.Fragment, { key: m['고유ID'] }, card, h('div', { className:'fline' }))
+                  const strip = kin.length
+                    ? h(KinStrip, { list:kin, photos, dark, onPick:pickKin }) : null;
+                  return (strip || famEnds)
+                    ? h(React.Fragment, { key: m['고유ID'] }, card, strip,
+                        famEnds ? h('div', { className:'fline' }) : null)
                     : card;
                 })
               )
