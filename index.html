@@ -320,6 +320,18 @@ a{color:inherit}
   padding-left:6px;padding-right:6px}
 /* 항목 덩어리가 끝나는 줄 아래에 「가정 구분선」 색 선 */
 .alltab.tx tbody tr.gsep th,.alltab.tx tbody tr.gsep td{border-bottom:2px solid var(--line)}
+
+/* ── 표 최대화 (정식 1.18) ────────────────────────────────────────
+   [최대화] 를 누르면 표가 화면을 가득 채운다. 휴대폰을 옆으로 눕히면
+   가로가 두 배 가까이 넓어져 한 번에 여러 구역을 보실 수 있다. */
+.zoomfull{position:fixed;inset:0;z-index:60;background:var(--bg);
+  display:flex;flex-direction:column}
+.zoombar{display:flex;align-items:center;gap:8px;flex-shrink:0;
+  padding:7px 10px;background:var(--surface);border-bottom:1px solid var(--border)}
+.zoomfull .alltab-wrap{flex:1;max-height:none;margin:0;border:0;border-radius:0}
+body.zoomed{overflow:hidden}
+/* 눕힌 휴대폰처럼 화면이 납작할 때는 표에 자리를 더 준다 */
+@media (max-height:560px){ .alltab-wrap{max-height:calc(100vh - 118px)} }
 /* 구역 칸을 하나 건너 하나씩 연하게 (세로로 짚어 읽기 쉽게) */
 .alltab.tx th.alt,.alltab.tx td.alt{background:var(--surface-2)}
 .alltab.tx th.sum,.alltab.tx td.sum{background:var(--soft);font-weight:800}
@@ -6359,16 +6371,35 @@ function saveBlob(blob, name) {
 
 /* 전체집계(T)를 엑셀로 — kind 'all' 은 세로가 구역, 'all2' 는 세로가 항목 */
 function saveAllTallyXlsx(T, kind) {
-  const HEAD = cssHex('--surface-2'), SUMF = cssHex('--soft'), ALT = cssHex('--surface-2');
-  const TXT  = cssHex('--text'), SUB = cssHex('--text-3');
+  /* ★ 엑셀 바탕은 ★하얗게 두지 않는다★ (정식 1.18).
+       기본 흰 칸은 인쇄하면 밋밋하고 칸 구분이 잘 안 보인다.
+       그래서 아주 연한 종이색을 깔고, 한 줄 건너 한 줄은 조금 더 진하게 한다.
+     ★ 색은 화면 설정(밝게/어둡게)과 상관없이 ★늘 밝은 종이 기준★ 이다.
+       어둡게 쓰시던 분이 저장해도 흰 종이에 흰 글씨가 나오지 않는다. */
+  const PAPER = 'FFF7F9FC';      /* 기본 칸 — 하얀색이 아닌 아주 연한 색 */
+  const ALT   = 'FFEAF1F8';      /* 한 줄 건너 한 줄 */
+  const HEAD  = 'FFDCE7F2';      /* 머리줄 */
+  const SUMF  = 'FFE3F1EA';      /* 합계 */
+  const TXT   = 'FF1F2937', SUB = 'FF7B8794';
+  /* 종이 위에서 읽히도록 너무 밝은 색은 어둡게 눌러 준다 */
+  const ink = hx => {
+    const s = String(hx || '').replace(/^FF/i, '');
+    const r = parseInt(s.slice(0, 2), 16), g = parseInt(s.slice(2, 4), 16), b = parseInt(s.slice(4, 6), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return TXT;
+    const lum = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+    if (lum <= 0.52) return 'FF' + s.toUpperCase();
+    const k = (0.42 / lum);
+    const p = n => ('0' + Math.max(0, Math.min(255, Math.round(n * k))).toString(16)).slice(-2).toUpperCase();
+    return 'FF' + p(r) + p(g) + p(b);
+  };
   /* ★ 항목 색은 화면에서 'var(--ok)' 같은 글로 들고 있다.
        엑셀은 AARRGGBB 여덟 자리만 알아듣기 때문에 여기서 바꿔 준다.
        (이걸 빠뜨리면 파일은 만들어지지만 엑셀이 열지 못한다.) */
   const hexOf = v => {
     const s = String(v || '');
     const m = /^var\((--[A-Za-z0-9-]+)\)$/.exec(s);
-    if (m) return cssHex(m[1]);
-    if (s.charAt(0) === '#') return 'FF' + s.slice(1).toUpperCase();
+    if (m) return ink(cssHex(m[1]));
+    if (s.charAt(0) === '#') return ink('FF' + s.slice(1).toUpperCase());
     return TXT;
   };
   const COL = {};
@@ -6404,7 +6435,7 @@ function saveAllTallyXlsx(T, kind) {
     });
     const rows = [{ ht:18, cells:cells1 }, { ht:16, cells:cells2 }];
     T.rows.forEach((r, ri) => {
-      const alt = ri % 2 ? ALT : null;
+      const alt = ri % 2 ? ALT : PAPER;
       const maxN = T.KEYS.reduce((m, k) => Math.max(m, r.c[k].length), 1);
       rows.push({ ht: ht(maxN), cells: [
         { v:(r.gu === '미지정' ? '미지정' : r.gu + '구역') + ' (' + r.n + '명)',
@@ -6433,10 +6464,10 @@ function saveAllTallyXlsx(T, kind) {
       const maxN = T.rows.reduce((m, r) => Math.max(m, r.c[k].length), 1);
       rows.push({ ht: ht(maxN), cells: [
         { v:T.LABEL[k] + ' (' + T.total[k] + '명)',
-          s:{ c:COL[k], b:1, ha:'left', bl:'thin', br:'med', bb: T.SEP[k] ? 'med' : 'thin' } }
+          s:{ c:COL[k], b:1, f:HEAD, ha:'left', bl:'thin', br:'med', bb: T.SEP[k] ? 'med' : 'thin' } }
       ].concat(T.rows.map((r, ri) => ({
         v: nl(r.c[k]),
-        s: { c: r.c[k].length ? COL[k] : SUB, f: ri % 2 ? ALT : null, wrap:1,
+        s: { c: r.c[k].length ? COL[k] : SUB, f: ri % 2 ? ALT : PAPER, wrap:1,
              br:'thin', bb: T.SEP[k] ? 'med' : 'thin' }
       }))).concat([{ v:T.total[k], num:1,
         s:{ c:COL[k], b:1, f:SUMF, va:'center', br:'thin', bb: T.SEP[k] ? 'med' : 'thin' } }]) });
@@ -7623,6 +7654,8 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   const [tab,    setTab]    = useState('check');
   /* [집계] 탭에서 보고 있는 범위 — '' 은 교회 전체, 아니면 구역(명단) id */
   const [talGid, setTalGid] = useState('');
+  /* 전체집계 표를 화면 가득 채워 보고 있나 (정식 1.18) */
+  const [zoom, setZoom] = useState(false);
   const talInit = useRef(false);        /* 전도인 첫 구역을 한 번만 맞추는 표식 */
   const [openId, setOpenId] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -7818,6 +7851,35 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
     talInit.current = true;
     setTalGid(talGus[0]);
   }, [talGus, role]);
+
+  /* 최대화 중에는 뒤 화면이 밀리지 않게 잠그고, [뒤로]·ESC 로도 닫는다 */
+  useEffect(() => {
+    if (!zoom) return;
+    try { document.body.classList.add('zoomed'); } catch (e) {}
+    const esc = e => { if (e.key === 'Escape') setZoom(false); };
+    window.addEventListener('keydown', esc);
+    return () => {
+      try { document.body.classList.remove('zoomed'); } catch (e) {}
+      window.removeEventListener('keydown', esc);
+    };
+  }, [zoom]);
+  /* 탭을 옮기면 최대화는 저절로 풀린다 */
+  useEffect(() => { setZoom(false); }, [tab]);
+
+  /* 표를 감싸는 껍데기 — 최대화면 화면 전체, 아니면 카드 안 */
+  const zoomBox = (title, node) => zoom
+    ? h('div', { className:'zoomfull' },
+        h('div', { className:'zoombar' },
+          h('span', { style:{ flex:1, minWidth:0, fontSize:'13.5px', fontWeight:800,
+                              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' } }, title),
+          h('span', { style:{ fontSize:'11.5px', color:'var(--text-3)', flexShrink:0 } },
+            '옆으로 눕히면 더 넓게'),
+          h('button', {
+            type:'button', className:'btn btn-ghost btn-sm', style:{ flexShrink:0 },
+            onClick: () => setZoom(false)
+          }, h('i', { className:'ti ti-arrows-minimize', style:{ fontSize:'17px' } }), '닫기')),
+        node)
+    : node;
 
   const talPicked = scope ? (talDept ? '' : scope.code) : talGid;
   const talList = useMemo(() => {
@@ -8564,14 +8626,20 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
               type:'button', className:'btn btn-ghost btn-sm', style:{ flexShrink:0 },
               onClick: () => { try { saveAllTallyXlsx(T, 'all'); }
                                catch(e) { alert('엑셀 저장 실패: ' + e.message); } }
-            }, h('i', { className:'ti ti-file-spreadsheet', style:{ fontSize:'18px' } }), '엑셀로 저장')),
+            }, h('i', { className:'ti ti-file-spreadsheet', style:{ fontSize:'18px' } }), '엑셀로 저장'),
+            h('button', {
+              type:'button', className:'btn btn-ghost btn-sm', style:{ flexShrink:0 },
+              onClick: () => setZoom(true)
+            }, h('i', { className:'ti ti-arrows-maximize', style:{ fontSize:'18px' } }), '최대화')),
           h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', lineHeight:1.65 } },
             '교회 ', h('b', null, T.allN + '명'), ' 을 구역 차례로 펼쳤습니다. ',
             h('b', null, '봉'), '사회 · ', h('b', null, '어'), '머니회 · ',
             h('b', null, '은'), '장회 · ', h('b', null, '청'), '년회 로 줄여 적었고, ',
             '칸이 많아 ', h('b', null, '가로·세로로 밀어'), ' 보시면 됩니다 \u2014 ',
             '맨 윗줄(항목)과 왼쪽 구역 칸은 밀어도 ', h('b', null, '제자리에 붙어'), ' 있습니다. ',
-            '주일 날짜와 상관없이 ', h('b', null, '지금 등록된 출석상태'), ' 를 셉니다.'),
+            '주일 날짜와 상관없이 ', h('b', null, '지금 등록된 출석상태'), ' 를 셉니다. ',
+            h('b', null, '[최대화]'), ' 를 누르고 휴대폰을 옆으로 눕히면 훨씬 넓게 보입니다.'),
+          zoomBox('전체집계 — 구역별 이름',
           h('div', { className:'alltab-wrap', style:{ margin:'10px -4px 0' } },
             h('table', { className:'alltab' },
               h('thead', null,
@@ -8608,7 +8676,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                   )
                 ])
               )
-            ))
+            )))
         );
       })(),
 
@@ -8628,11 +8696,17 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
               type:'button', className:'btn btn-ghost btn-sm', style:{ flexShrink:0 },
               onClick: () => { try { saveAllTallyXlsx(T, 'all2'); }
                                catch(e) { alert('엑셀 저장 실패: ' + e.message); } }
-            }, h('i', { className:'ti ti-file-spreadsheet', style:{ fontSize:'18px' } }), '엑셀로 저장')),
+            }, h('i', { className:'ti ti-file-spreadsheet', style:{ fontSize:'18px' } }), '엑셀로 저장'),
+            h('button', {
+              type:'button', className:'btn btn-ghost btn-sm', style:{ flexShrink:0 },
+              onClick: () => setZoom(true)
+            }, h('i', { className:'ti ti-arrows-maximize', style:{ fontSize:'18px' } }), '최대화')),
           h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', lineHeight:1.65 } },
             '[전체집계] 와 같은 내용을 ', h('b', null, '가로·세로만 바꿔'), ' 놓은 표입니다 \u2014 ',
             '가로가 구역, 세로가 항목입니다. 교회 ', h('b', null, T.allN + '명'), '. ',
-            '왼쪽 항목 칸과 맨 윗 구역 줄은 밀어도 ', h('b', null, '제자리에 붙어'), ' 있습니다.'),
+            '왼쪽 항목 칸과 맨 윗 구역 줄은 밀어도 ', h('b', null, '제자리에 붙어'), ' 있습니다. ',
+            h('b', null, '[최대화]'), ' 를 누르고 휴대폰을 옆으로 눕히면 훨씬 넓게 보입니다.'),
+          zoomBox('전체집계2 — 항목별 이름',
           h('div', { className:'alltab-wrap', style:{ margin:'10px -4px 0' } },
             h('table', { className:'alltab tx' },
               h('thead', null,
@@ -8658,7 +8732,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                   h('td', { key:'__t', className:'sum', style:{ color:T.COL[k] } }, T.total[k])
                 ))
               )
-            ))
+            )))
         );
       })(),
 
