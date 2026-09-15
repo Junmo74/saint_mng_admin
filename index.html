@@ -389,6 +389,34 @@ a{color:inherit}
 .zoombar .btn{min-height:26px;font-size:12.5px;padding:0 9px;border-radius:9px;gap:4px}
 .zoomfull .alltab-wrap{flex:1;max-height:none;margin:0;border:0;border-radius:0}
 body.zoomed{overflow:hidden}
+
+/* ── 이름을 눌러 칸을 옮기는 쪽지창 — 출석표 [집계] 탭 (2026-09-15) ──
+   아래에서 올라오는 창으로 둔다. 어르신이 한 손으로 드는 휴대폰에서
+   화면 위쪽은 엄지가 닿지 않는다. */
+.kpop{
+  position:fixed; inset:0; z-index:70; background:rgba(12,24,40,.45);
+  display:flex; align-items:flex-end; justify-content:center;
+  -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);
+}
+.kpop-box{
+  width:100%; max-width:var(--maxw); background:var(--surface);
+  border-radius:var(--r-xl) var(--r-xl) 0 0; box-shadow:var(--shadow-sheet);
+  padding:16px 16px calc(18px + env(safe-area-inset-bottom));
+  max-height:86vh; overflow-y:auto;
+}
+/* 고르는 단추는 크게 — 이름보다 단추가 작으면 잘못 누른다 */
+.kpop-grid{display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:13px}
+.kpop-grid button{
+  min-height:58px; font-size:16.5px; font-weight:800; border-radius:var(--r);
+  border:1.5px solid var(--border-2); background:var(--surface-2); color:var(--text);
+  cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;
+  transition:transform .1s, background .15s, border-color .15s;
+}
+.kpop-grid button:active{transform:scale(.97)}
+.kpop-grid button.on{background:var(--soft); border-color:currentColor}
+.kpop-grid button[disabled]{opacity:.4; cursor:default}
+/* 지금 서 있는 칸에는 체크 표시를 둔다 */
+.kpop-now{font-size:12px; font-weight:800; color:var(--text-3); letter-spacing:-.03em}
 /* 눕힌 휴대폰처럼 화면이 납작할 때는 표에 자리를 더 준다 */
 @media (max-height:560px){ .alltab-wrap{max-height:calc(100vh - 118px)} }
 /* 구역 칸을 하나 건너 하나씩 연하게 (세로로 짚어 읽기 쉽게) */
@@ -8153,12 +8181,106 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   const [zoom, setZoom] = useState(false);
   const talInit = useRef(false);        /* 전도인 첫 구역을 한 번만 맞추는 표식 */
   const [openId, setOpenId] = useState('');
+  /* [집계] 탭에서 이름을 눌러 칸을 옮기는 쪽지창 (2026-09-15) */
+  const [movM,    setMovM]    = useState(null);   /* 옮길 분 (null = 닫힘) */
+  const [movBusy, setMovBusy] = useState(false);
+  const [movErr,  setMovErr]  = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [saveState, setSaveState] = useState('idle');   /* idle | pending | saving | saved */
 
   /* ★ 담당자 계정으로 들어오면 명단을 고르지 않는다 —
      계정 이름이 곧 담당 명단이므로 그 명단만 열린다. (1.06) */
   const scope = myScope();
+
+  /* ═══ [집계] 탭 — 이름을 눌러 칸 옮기기 (2026-09-15) ═══════════
+     집계를 보다가 「이분은 이제 미출석인데」 싶을 때, 출석 체크 탭으로
+     건너가 그 분을 다시 찾지 않고 그 자리에서 바로 옮기시게 한다.
+
+     ★ 손댈 수 있는 분인지는 출석 체크와 ★똑같은 잣대★ 로 본다 —
+       안내실이 출석상태 고치기를 잠갔으면 못 고치고(attEditOn),
+       구역 담당자는 자기 명단인 분만 고친다(scopeAllows).
+       집계는 교적 기준이라 내 구역에 살지만 부서에서 체크하는 분도
+       함께 나오는데, 그런 분은 여기서도 손대지 않는다. */
+  const canMove = m => !!onAttStatus && attEditOn && scopeAllows(scope, m);
+
+  /* 고르신 칸으로 옮긴다. 상태 하나만 바꾸고 표식은 살려 둔다 —
+     전입·구원은 '언제 오셨나' 를 적어 둔 것이라 칸을 옮긴다고 지울 값이 아니다.
+     ★ 전출만 다르다. 전출은 미출석에 묶이는 표식이라(attText),
+       전출을 고르면 미출석 + 전출로 함께 적히고,
+       다른 칸을 고르면 전출 표식이 저절로 떨어진다. */
+  async function moveTo(kind) {
+    const m = movM;
+    if (!m || movBusy) return;
+    const cur  = effAttFull(m, attStatus);
+    const keep = cur.marks.filter(x => x !== '전출');
+    const next = (kind === '전출') ? attText('미출석', ['전출']) : attText(kind, keep);
+    if (next === attText(cur.state, cur.marks)) { setMovM(null); return; }
+    setMovBusy(true); setMovErr('');
+    try { await onAttStatus(m['고유ID'], next); setMovM(null); }
+    catch (e) { setMovErr(fsErrMsg(e)); }
+    setMovBusy(false);
+  }
+
+  /* 쪽지창이 떠 있는 동안 뒤 화면이 밀리지 않게 잠그고, ESC 로도 닫는다 */
+  useEffect(() => {
+    if (!movM) return;
+    try { document.body.classList.add('zoomed'); } catch (e) {}
+    const esc = e => { if (e.key === 'Escape' && !movBusy) setMovM(null); };
+    window.addEventListener('keydown', esc);
+    return () => {
+      try { document.body.classList.remove('zoomed'); } catch (e) {}
+      window.removeEventListener('keydown', esc);
+    };
+  }, [movM, movBusy]);
+
+  /* 쪽지창 그리기 — 지금 서 있는 칸에는 체크를 두고,
+     영유아에게는 출석A·B·미출석을 잠근다 (영유아는 매기지 않는다). */
+  const movePop = movM && (() => {
+    const cur    = effAttFull(movM, attStatus);
+    const ex     = isAttExempt(movM);
+    const outNow = cur.marks.indexOf('전출') >= 0;
+    const nowOf  = k => (k === '전출') ? outNow : (!outNow && cur.state === k);
+    const TONE   = { '출석A':'var(--ok)', '출석B':'var(--warn)',
+                     '미출석':'var(--bad)', '전출':'var(--bad)' };
+    const close  = () => { if (!movBusy) { setMovM(null); setMovErr(''); } };
+    return h('div', { className:'kpop', onClick: close },
+      h('div', { className:'kpop-box', onClick: e => e.stopPropagation() },
+        h('p', { style:{ fontSize:'18px', fontWeight:800, letterSpacing:'-.02em' } },
+          movM['이름'],
+          h('span', { style:{ fontSize:'15px', fontWeight:700, color:'var(--text-2)' } },
+            ' 님을 어느 칸으로?')),
+        h('div', { style:{ display:'flex', alignItems:'center', gap:'7px', marginTop:'7px' } },
+          h('span', { className:'kpop-now' }, '지금'),
+          h(AttBadges, { value: attText(cur.state, cur.marks), dark, exempt: ex })),
+
+        h('div', { className:'kpop-grid' },
+          ['출석A', '출석B', '미출석', '전출'].map(k => {
+            const on  = nowOf(k);
+            const off = ex && k !== '전출';      /* 영유아는 전출만 */
+            return h('button', {
+              key:k, type:'button', className: on ? 'on' : '',
+              disabled: movBusy || off,
+              style:{ color: on ? TONE[k] : undefined },
+              onClick: () => moveTo(k)
+            },
+              on ? h('i', { className:'ti ti-check', style:{ fontSize:'17px' } }) : null,
+              k);
+          })),
+
+        ex && h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.6 } },
+          h('b', null, '영유아'), ' 는 출석A·출석B·미출석을 매기지 않습니다. 전출만 달 수 있습니다.'),
+        !ex && h('p', { style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'9px', lineHeight:1.6 } },
+          '누르면 ', h('b', null, '곧바로 저장되고'), ' 이름이 그 칸으로 옮겨 갑니다. ',
+          '전입·구원 표식은 그대로 남습니다.'),
+
+        movErr && h('p', { className:'note note-bad', style:{ marginTop:'9px', fontSize:'13px' } }, movErr),
+
+        h('button', {
+          type:'button', className:'btn btn-ghost btn-block', disabled: movBusy,
+          style:{ marginTop:'11px' }, onClick: close
+        }, movBusy ? '옮기는 중...' : '그만두기')
+      ));
+  })();
 
   const [gid, setGid] = useState(() => {
     if (scope) return scope.gid;
@@ -9242,20 +9364,22 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
         };
         const box = { a:{}, b:{}, school:[], baby:[], adultX:[], studentX:[],
                       into:[], out:[], saved:[] };
+        /* ★ 이름 글자가 아니라 ★성도 자료★ 를 담는다 (2026-09-15).
+             눌렀을 때 누구인지 알아야 칸을 옮겨 드릴 수 있기 때문이다.
+             (같은 이름이 둘 계셔도 고유ID 로 갈린다) */
         talList.forEach(m => {
           const f  = effAttFull(m, attStatus);
-          const nm = String(m['이름'] || '').trim();
-          if (f.marks.indexOf('전입') >= 0) box.into.push(nm);
-          if (f.marks.indexOf('전출') >= 0) box.out.push(nm);
-          if (f.marks.indexOf('구원') >= 0) box.saved.push(nm);
-          if (isAttExempt(m)) { box.baby.push(nm); return; }
+          if (f.marks.indexOf('전입') >= 0) box.into.push(m);
+          if (f.marks.indexOf('전출') >= 0) box.out.push(m);
+          if (f.marks.indexOf('구원') >= 0) box.saved.push(m);
+          if (isAttExempt(m)) { box.baby.push(m); return; }
           const student = !!deptOf(m);
-          if (f.state === '미출석') { (student ? box.studentX : box.adultX).push(nm); return; }
-          if (student) { box.school.push(nm); return; }
+          if (f.state === '미출석') { (student ? box.studentX : box.adultX).push(m); return; }
+          if (student) { box.school.push(m); return; }
           ((f.state === '출석B') ? box.b : box.a)[hoeOf(m)] =
-            (((f.state === '출석B') ? box.b : box.a)[hoeOf(m)] || []).concat([nm]);
+            (((f.state === '출석B') ? box.b : box.a)[hoeOf(m)] || []).concat([m]);
         });
-        const ko = (x, y) => x.localeCompare(y, 'ko');
+        const ko = (x, y) => String(x['이름'] || '').localeCompare(String(y['이름'] || ''), 'ko');
         [box.a, box.b].forEach(o => Object.keys(o).forEach(k => o[k].sort(ko)));
         [box.school, box.baby, box.adultX, box.studentX,
          box.into, box.out, box.saved].forEach(l => l.sort(ko));
@@ -9263,6 +9387,25 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
         const aN = sum(box.a), bN = sum(box.b);
         const xN = box.adultX.length + box.studentX.length;
         const regN = aN + bN + box.school.length + box.baby.length + xN;
+
+        /* 이름 한 알 — 손댈 수 있는 분은 ★누를 수 있는 단추★ 로 둔다.
+           누르면 어느 칸으로 옮길지 고르는 쪽지창이 열린다 (2026-09-15).
+           손댈 수 없는 분(다른 구역·부서에서 체크하는 분, 잠가 둔 때)은
+           예전처럼 글자만 둔다 — 눌러도 아무 일이 없으면 더 답답하다. */
+        const chipBase = {
+          fontSize:'13.5px', fontWeight:700, padding:'4px 9px',
+          borderRadius:'999px', background:'var(--soft)',
+          border:'1px solid var(--soft-bd)', whiteSpace:'nowrap'
+        };
+        const nameChip = (m, i) => canMove(m)
+          ? h('button', {
+              key: m['고유ID'] + '_' + i, type:'button',
+              title: String(m['이름'] || '') + ' 님 — 칸 옮기기',
+              style:{ ...chipBase, color:'var(--navy)', cursor:'pointer',
+                      borderColor:'var(--navy-3)', WebkitTapHighlightColor:'transparent' },
+              onClick: () => { setMovErr(''); setMovM(m); }
+            }, m['이름'])
+          : h('span', { key: m['고유ID'] + '_' + i, style: chipBase }, m['이름']);
 
         /* 이름 한 줄 — 왼쪽에 칸 이름과 인원, 오른쪽에 이름을 감싸 넣는다 */
         const row = (label, arr, col) => h('div', {
@@ -9277,10 +9420,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
               arr.length + '명')),
           h('div', { style:{ flex:1, minWidth:0, display:'flex', flexWrap:'wrap', gap:'4px' } },
             arr.length
-              ? arr.map((n, i) => h('span', { key:n + '_' + i,
-                  style:{ fontSize:'13.5px', fontWeight:700, padding:'4px 9px',
-                          borderRadius:'999px', background:'var(--soft)',
-                          border:'1px solid var(--soft-bd)', whiteSpace:'nowrap' } }, n))
+              ? arr.map((m, i) => nameChip(m, i))
               : h('span', { style:{ fontSize:'12.5px', color:'var(--text-3)', paddingTop:'4px' } },
                   '\u2014'))
         );
@@ -9337,20 +9477,25 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
               '주일 체크와는 다른 숫자입니다. 지금 등록되어 있는 ',
               h('b', null, '출석상태'), ' 를 칸마다 이름으로 적은 것입니다. ',
               '엑셀 「구역」 칸 기준이라 그 구역의 교회학교·영유아도 함께 들어갑니다.')),
+          /* ★ 칸 차례 : 출석A → 출석B → ★미출석★ → 교회학교 → 영유아
+               (2026-09-15) 출석A·출석B·미출석은 같은 잣대로 갈린 세 칸이라
+               나란히 두어야 옮겨 다니는 것이 한눈에 읽힌다. */
           sec('출석A', aN, 'var(--ok)', 'circle-check', hoeRows(box.a)),
           sec('출석B', bN, 'var(--warn)', 'circle-dashed', hoeRows(box.b)),
+          sec('미출석', xN, 'var(--bad)', 'circle-x',
+              [row('성인', box.adultX, null), row('학생', box.studentX, null)]),
           sec('교회학교', box.school.length, 'var(--navy-2)', 'school',
               [row('학생', box.school, null)]),
           sec('영유아', box.baby.length, 'var(--violet)', 'mood-kid',
               [row('영유아', box.baby, null)]),
-          sec('미출석', xN, 'var(--bad)', 'circle-x',
-              [row('성인', box.adultX, null), row('학생', box.studentX, null)]),
           sec('전입 · 전출 · 구원',
               box.into.length + box.out.length + box.saved.length,
               'var(--navy)', 'bookmark',
               [row('전입', box.into, 'var(--violet)'),
                row('전출', box.out, 'var(--bad)'),
-               row('구원', box.saved, 'var(--navy-2)')])
+               row('구원', box.saved, 'var(--navy-2)')]),
+          /* 이름을 누르면 열리는 쪽지창 */
+          movePop
         );
       })(),
 
