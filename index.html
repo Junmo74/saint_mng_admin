@@ -366,6 +366,15 @@ a{color:inherit}
 .alltab td.e{color:var(--text-3)}
 /* 이름 색은 칸마다 그 항목 제목 색으로 정해 넣는다 (COL 참고) */
 .alltab td .nm{color:inherit}
+/* 누를 수 있는 이름 — 겉모습은 옆 이름과 같게 두고(표가 어지러워진다)
+   아래에 점선만 살짝 깔아 '누를 수 있는 곳' 임을 알린다 (2026-09-15) */
+.alltab td button.nm{
+  display:block; width:100%; padding:0; border:0; background:none;
+  font:inherit; color:inherit; cursor:pointer; text-align:center;
+  border-bottom:1px dotted currentColor; -webkit-tap-highlight-color:transparent;
+}
+.alltab td button.nm:active{opacity:.55}
+@media (hover:hover){ .alltab td button.nm:hover{background:var(--soft)} }
 /* ── 전체집계2 — 가로·세로를 바꾼 표 ── */
 .alltab.tx{min-width:1000px}
 .alltab.tx thead th{top:0;height:auto}
@@ -6256,7 +6265,10 @@ function allHoeKey(m) {
   return '기';
 }
 function buildAllTally(members, attStatus, gus) {
-  const ko = (x, y) => x.localeCompare(y, 'ko');
+  /* ★ 칸에 이름 글자가 아니라 ★성도 자료★ 를 담는다 (2026-09-15)
+       — 표에서 이름을 눌러 칸을 옮기려면 고유ID 가 있어야 한다.
+       엑셀로 내보낼 때는 이름만 뽑아 쓴다 (saveAllTallyXlsx 의 nl). */
+  const ko = (x, y) => String(x['이름'] || '').localeCompare(String(y['이름'] || ''), 'ko');
   const blank = () => {
     const o = { school:[], baby:[], absent:[], into:[], out:[], saved:[] };
     ALL_HOE.forEach(k => { o['a' + k] = []; o['b' + k] = []; });
@@ -6267,15 +6279,14 @@ function buildAllTally(members, attStatus, gus) {
       (String(m['구역'] || '').trim() || '미지정') === gu);
     const c = blank();
     list.forEach(m => {
-      const f  = effAttFull(m, attStatus);
-      const nm = String(m['이름'] || '').trim();
-      if (f.marks.indexOf('전입') >= 0) c.into.push(nm);
-      if (f.marks.indexOf('전출') >= 0) c.out.push(nm);
-      if (f.marks.indexOf('구원') >= 0) c.saved.push(nm);
-      if (isAttExempt(m)) { c.baby.push(nm); return; }
-      if (f.state === '미출석') { c.absent.push(nm); return; }
-      if (deptOf(m)) { c.school.push(nm); return; }
-      c[(f.state === '출석B' ? 'b' : 'a') + allHoeKey(m)].push(nm);
+      const f = effAttFull(m, attStatus);
+      if (f.marks.indexOf('전입') >= 0) c.into.push(m);
+      if (f.marks.indexOf('전출') >= 0) c.out.push(m);
+      if (f.marks.indexOf('구원') >= 0) c.saved.push(m);
+      if (isAttExempt(m)) { c.baby.push(m); return; }
+      if (f.state === '미출석') { c.absent.push(m); return; }
+      if (deptOf(m)) { c.school.push(m); return; }
+      c[(f.state === '출석B' ? 'b' : 'a') + allHoeKey(m)].push(m);
     });
     Object.keys(c).forEach(k => c[k].sort(ko));
     return { gu, n: list.length, c };
@@ -6539,7 +6550,9 @@ function saveAllTallyXlsx(T, kind) {
   T.KEYS.forEach(k => { COL[k] = hexOf(T.COL[k]); });
   const GC = T.GROUPS.map(g => hexOf(g.c));
   const ht = n => Math.max(17, n * 13.5 + 5);          /* 이름 수에 맞춘 줄 높이 */
-  const nl = arr => arr.length ? arr.join('\n') : '·';
+  /* 칸에는 성도 자료가 들어 있다 — 엑셀에는 이름만 줄바꿈으로 적는다 */
+  const nl = arr => arr.length
+    ? arr.map(x => String((x && x['이름']) || x)).join('\n') : '·';
   const ts = new Date();
   const stamp = ts.getFullYear() + ('0' + (ts.getMonth() + 1)).slice(-2) + ('0' + ts.getDate()).slice(-2);
   let grid, name;
@@ -6613,10 +6626,20 @@ function saveAllTallyXlsx(T, kind) {
 function xlRef(c, r) { return xlCol(c) + (r + 1); }
 
 /* 이름을 한 줄에 하나씩 쌓은 칸 — 두 표가 함께 쓴다 */
-function allCell(arr, key, color, cls) {
+/* pick — 성도 한 분을 받아 '누르면 할 일' 을 돌려주는 함수(없으면 못 누른다).
+   칸에 든 것은 ★성도 자료★ 다 — 눌렀을 때 누구인지 알아야 하기 때문이다.
+   (옛 자료처럼 이름 글자가 들어와도 그대로 그린다) */
+function allCell(arr, key, color, cls, pick) {
   return arr.length
     ? h('td', { key: key, className: cls, style:{ color: color } },
-        arr.map((n, i) => h('div', { key: n + '_' + i, className:'nm' }, n)))
+        arr.map((m, i) => {
+          const nm = (m && m['이름']) || m;
+          const on = pick && pick(m);
+          return on
+            ? h('button', { key: String(nm) + '_' + i, type:'button', className:'nm',
+                            title: String(nm) + ' 님 \u2014 칸 옮기기', onClick: on }, nm)
+            : h('div', { key: String(nm) + '_' + i, className:'nm' }, nm);
+        }))
     : h('td', { key: key, className: (cls ? cls + ' ' : '') + 'e' }, '\u00b7');
 }
 
@@ -8239,6 +8262,12 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
     return String(m['구역'] || '').trim() === scope.code;     /* 구역 담당자 — 그 구역(교적) */
   };
 
+  /* 표·목록의 이름 한 알에 붙일 '누르면 할 일'.
+     손댈 수 없는 분이면 null 을 돌려주어 단추가 되지 않게 한다. */
+  const pickName = m => (m && canMove(m))
+    ? () => { setMovErr(''); setMovM(m); }
+    : null;
+
   /* 고르신 칸으로 옮긴다. 상태 하나만 바꾸고 표식은 살려 둔다 —
      전입·구원은 '언제 오셨나' 를 적어 둔 것이라 칸을 옮긴다고 지울 값이 아니다.
      ★ 전출만 다르다. 전출은 미출석에 묶이는 표식이라(attText),
@@ -8260,11 +8289,20 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   /* 쪽지창이 떠 있는 동안 뒤 화면이 밀리지 않게 잠그고, ESC 로도 닫는다 */
   useEffect(() => {
     if (!movM) return;
-    try { document.body.classList.add('zoomed'); } catch (e) {}
+    /* ★ 뒤 화면 잠금(body.zoomed)은 최대화도 함께 쓴다.
+         내가 걸지 않은 잠금을 내가 풀면, 표를 최대화해 둔 채
+         쪽지창만 닫았을 때 뒤에 깔린 표가 밀려 버린다.
+         그래서 ★내가 건 경우에만★ 푼다. */
+    let locked = false;
+    try {
+      if (!document.body.classList.contains('zoomed')) {
+        document.body.classList.add('zoomed'); locked = true;
+      }
+    } catch (e) {}
     const esc = e => { if (e.key === 'Escape' && !movBusy) setMovM(null); };
     window.addEventListener('keydown', esc);
     return () => {
-      try { document.body.classList.remove('zoomed'); } catch (e) {}
+      try { if (locked) document.body.classList.remove('zoomed'); } catch (e) {}
       window.removeEventListener('keydown', esc);
     };
   }, [movM, movBusy]);
@@ -8522,13 +8560,15 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
   useEffect(() => {
     if (!zoom) return;
     try { document.body.classList.add('zoomed'); } catch (e) {}
-    const esc = e => { if (e.key === 'Escape') setZoom(false); };
+    /* ★ 쪽지창이 떠 있으면 ESC 는 쪽지창 몫이다 (2026-09-15).
+         둘 다 받으면 한 번 눌렀는데 쪽지창과 최대화가 함께 닫힌다. */
+    const esc = e => { if (e.key === 'Escape' && !movM) setZoom(false); };
     window.addEventListener('keydown', esc);
     return () => {
       try { document.body.classList.remove('zoomed'); } catch (e) {}
       window.removeEventListener('keydown', esc);
     };
-  }, [zoom]);
+  }, [zoom, movM]);
   /* 탭을 옮기면 최대화는 저절로 풀린다 */
   useEffect(() => { setZoom(false); }, [tab]);
 
@@ -9313,7 +9353,8 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
             '칸이 많아 ', h('b', null, '가로·세로로 밀어'), ' 보시면 됩니다 \u2014 ',
             '맨 윗줄(항목)과 왼쪽 구역 칸은 밀어도 ', h('b', null, '제자리에 붙어'), ' 있습니다. ',
             '주일 날짜와 상관없이 ', h('b', null, '지금 등록된 출석상태'), ' 를 셉니다. ',
-            h('b', null, '[최대화]'), ' 를 누르고 휴대폰을 옆으로 눕히면 훨씬 넓게 보입니다.'),
+            h('b', null, '[최대화]'), ' 를 누르고 휴대폰을 옆으로 눕히면 훨씬 넓게 보입니다. ',
+            h('b', null, '이름을 누르면'), ' 그 자리에서 칸을 옮길 수 있습니다.'),
           zoomBox('전체집계 — 구역별 이름',
           h('div', { className:'alltab-wrap', style:{ margin:'10px -4px 0' } },
             h('table', { className:'alltab' },
@@ -9339,7 +9380,7 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                   h('th', { className:'sep' }, (r.gu === '미지정' ? '미지정' : r.gu + '구역'),
                     h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
                       r.n + '명')),
-                  T.KEYS.map(k => allCell(r.c[k], k, T.COL[k], T.SEP[k] ? 'sep' : ''))
+                  T.KEYS.map(k => allCell(r.c[k], k, T.COL[k], T.SEP[k] ? 'sep' : '', pickName))
                 )).concat([
                   h('tr', { key:'__sum', className:'sum' },
                     h('th', { className:'sep' }, '합계',
@@ -9351,7 +9392,9 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                   )
                 ])
               )
-            )))
+            ))),
+          /* 이름을 누르면 열리는 쪽지창 (집계 탭과 같은 것을 쓴다) */
+          movePop
         );
       })(),
 
@@ -9380,7 +9423,8 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
             '[전체집계] 와 같은 내용을 ', h('b', null, '가로·세로만 바꿔'), ' 놓은 표입니다 \u2014 ',
             '가로가 구역, 세로가 항목입니다. 교회 ', h('b', null, T.allN + '명'), '. ',
             '왼쪽 항목 칸과 맨 윗 구역 줄은 밀어도 ', h('b', null, '제자리에 붙어'), ' 있습니다. ',
-            h('b', null, '[최대화]'), ' 를 누르고 휴대폰을 옆으로 눕히면 훨씬 넓게 보입니다.'),
+            h('b', null, '[최대화]'), ' 를 누르고 휴대폰을 옆으로 눕히면 훨씬 넓게 보입니다. ',
+            h('b', null, '이름을 누르면'), ' 그 자리에서 칸을 옮길 수 있습니다.'),
           zoomBox('전체집계2 — 항목별 이름',
           h('div', { className:'alltab-wrap', style:{ margin:'10px -4px 0' } },
             h('table', { className:'alltab tx' },
@@ -9403,11 +9447,13 @@ function AttendView({ members, photos, logoUrl, role, fieldVis, attStatus, onAtt
                     h('div', { style:{ fontSize:'10px', fontWeight:700, color:'var(--text-3)' } },
                       T.total[k] + '명')),
                   T.rows.map((r, ri) =>
-                    allCell(r.c[k], r.gu, T.COL[k], ri % 2 ? 'alt' : '')),
+                    allCell(r.c[k], r.gu, T.COL[k], ri % 2 ? 'alt' : '', pickName)),
                   h('td', { key:'__t', className:'sum', style:{ color:T.COL[k] } }, T.total[k])
                 ))
               )
-            )))
+            ))),
+          /* 이름을 누르면 열리는 쪽지창 (집계 탭과 같은 것을 쓴다) */
+          movePop
         );
       })(),
 
