@@ -6805,10 +6805,20 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
         ),
         seeAtt && h('select', { value:fAtt, onChange: e => setFAtt(e.target.value), style:{ flex:1, minWidth:0 } },
           h('option', { value:'' }, '전체 출석'),
-          h('optgroup', { label:'출석' },
-            ATT_STATES.map(a => h('option', { key:a, value:a }, a))),
-          h('optgroup', { label:'표식' },
-            ATT_MARKS.map(a => h('option', { key:a, value:a }, a)))
+          /* ★ 구역 담당자께는 ★한 줄로 늘어놓는다★ (정식 1.18) —
+               「출석 / 표식」 으로 나눠 봤자 고르실 것은 여섯 개뿐이라
+               묶음 제목이 오히려 한 번 더 읽을 거리가 된다.
+               전출은 빼 둔다. 구역을 떠나신 분이라 구역 담당자께서
+               따로 찾아보실 일이 없고, 이미 미출석 안에 들어 있다.
+             ★ 안내실·전도인·부서 담당자는 예전처럼 묶어서 모두 보여 준다. */
+          statGu
+            ? ATT_STATES.concat(ATT_MARKS.filter(a => a !== '전출'))
+                .map(a => h('option', { key:a, value:a }, a))
+            : h(React.Fragment, null,
+                h('optgroup', { label:'출석' },
+                  ATT_STATES.map(a => h('option', { key:a, value:a }, a))),
+                h('optgroup', { label:'표식' },
+                  ATT_MARKS.map(a => h('option', { key:a, value:a }, a))))
         )
       ),
 
