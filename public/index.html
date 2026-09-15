@@ -39,6 +39,7 @@
      테두리색(--border)은 너무 흐려 어르신 눈에 잘 보이지 않아
      연한 붉은색으로 따로 둔다. 교회 상징색이 바뀌어도 이 색은 그대로다. */
   --line:#E3A6A6;
+  --kin-line:rgba(255,255,255,.55); /* 흩어진 식구 띠 점선 — 옅은 흰색 */
 
   --ok:#1B6B33; --warn:#9A5B00; --bad:#A32020; --violet:#4C31A6;
   --orange-fg:#8A4B00;   /* 타지역 — 주일만(warn)과 헷갈리지 않게 조금 더 붉다 */
@@ -64,6 +65,7 @@ html[data-theme="dark"]{
   --text:#E7EDF4; --text-2:#A4B2C0; --text-3:#74828F;
   --soft:#182838; --soft-bd:#22384D;
   --line:#8A5457;
+  --kin-line:rgba(255,255,255,.32); /* 흩어진 식구 띠 점선 — 옅은 흰색 */
 
   --ok:#7ACC93; --warn:#E5B569; --bad:#F09393; --violet:#B6A4F0;
   --orange-fg:#EDB578;
@@ -282,7 +284,7 @@ a{color:inherit}
   display:flex; flex-direction:row-reverse; flex-wrap:wrap;
   justify-content:flex-start; align-items:flex-start;
   gap:10px 12px; margin:3px 4px 5px; padding:9px 8px 3px;
-  border-top:1px dashed var(--line);
+  border-top:1px dashed var(--kin-line);
 }
 .kin{
   display:flex; flex-direction:column; align-items:center; gap:4px;
