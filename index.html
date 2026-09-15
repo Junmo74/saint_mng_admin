@@ -326,8 +326,11 @@ a{color:inherit}
    가로가 두 배 가까이 넓어져 한 번에 여러 구역을 보실 수 있다. */
 .zoomfull{position:fixed;inset:0;z-index:60;background:var(--bg);
   display:flex;flex-direction:column}
+/* 띠는 얇게 — 표에 한 줄이라도 더 내주려는 것이다.
+   안에 든 [닫기] 단추도 여기서만 작게 줄인다 (다른 화면 단추는 그대로). */
 .zoombar{display:flex;align-items:center;gap:8px;flex-shrink:0;
-  padding:7px 10px;background:var(--surface);border-bottom:1px solid var(--border)}
+  padding:2px 8px;background:var(--surface);border-bottom:1px solid var(--border)}
+.zoombar .btn{min-height:26px;font-size:12.5px;padding:0 9px;border-radius:9px;gap:4px}
 .zoomfull .alltab-wrap{flex:1;max-height:none;margin:0;border:0;border-radius:0}
 body.zoomed{overflow:hidden}
 /* 눕힌 휴대폰처럼 화면이 납작할 때는 표에 자리를 더 준다 */
