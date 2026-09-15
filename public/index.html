@@ -6983,16 +6983,20 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
 
   const hasFilter = search || fGu || fSo || fAtt || fCat;
 
+  /* ★ 안내실·전도인 첫 화면 제목 (정식 1.19)
+       예전에는 왼쪽 위에 「안내실」「전도인」 글자 표를 따로 붙였다.
+       그 표를 없애고, 대신 로고 옆 제목 자체를 그 등급 이름으로 바꾼다 —
+       "OO교회 임원 활동" 대신 "OO교회 안내실 활동" / "OO교회 전도인 활동".
+       구역·부서 담당자(leader)는 자기 구역·부서 이름이 이미 있던 자리라
+       그대로 두고, 제목도 예전 그대로 "OO교회 임원 활동" 이다. */
+  const homeTitle = role === 'admin'  ? CHURCH_NAME + ' 안내실 활동'
+                   : role === 'master' ? CHURCH_NAME + ' 전도인 활동'
+                   : APP_TITLE;
+
   return h('div', { className:'screen' },
     h(AppBar, {
-      title:APP_TITLE, icon:'building-church', logoUrl, onHome,
-      left: isStaff
-        ? h('span', {
-            style:{ fontSize:'12px', fontWeight:800, padding:'4px 10px', borderRadius:'999px',
-                    background:'var(--bar-chip)', border:'1px solid var(--bar-chip-bd)',
-                    color:'var(--bar-fg)', whiteSpace:'nowrap' }
-          }, (myScope() && myScope().name) || ROLE_LABEL[role])
-        : null,
+      title:homeTitle, icon:'building-church', logoUrl, onHome,
+      left: null,
       right: h(React.Fragment, null,
         /* 출석표 아이콘은 상단바에서 뺐다 (1.16) — 화면 가운데의 큰
            [주일 출석표 열기] 단추가 어르신께 훨씬 잘 보이기 때문이다. */
