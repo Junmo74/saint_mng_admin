@@ -11380,6 +11380,16 @@ function FamilyAdmin({ members, family, fieldVis, onFamilyUpdate, onMembersUpdat
   const [busy,   setBusy]   = useState(false);
   const [msg,    setMsg]    = useState('');
   const [editFid, setEditFid] = useState('');
+  /* 손보기 칸이 열리면 그 자리로 데려다 드린다 (정식 1.19) */
+  const editRef = useRef(null);
+  useEffect(() => {
+    if (!editFid || !editRef.current) return;
+    const t = setTimeout(() => {
+      try { editRef.current.scrollIntoView({ block:'start', behavior:'smooth' }); }
+      catch (e) { try { editRef.current.scrollIntoView(); } catch (e2) {} }
+    }, 60);
+    return () => clearTimeout(t);
+  }, [editFid]);
   const [srch,   setSrch]   = useState('');
   const [newName, setNewName] = useState('');
   const [relEdit, setRelEdit] = useState('');   /* 호칭을 고치는 중인 성도 */
@@ -11710,45 +11720,14 @@ function FamilyAdmin({ members, family, fieldVis, onFamilyUpdate, onMembersUpdat
       ),
       note(msg),
 
-      /* 만들어 둔 가족 목록 */
-      h('div', { style:{ marginTop:'16px' } },
-        h('p', { style:{ fontSize:'13px', fontWeight:800, color:'var(--text-3)', letterSpacing:'.04em', marginBottom:'8px' } },
-          '손으로 묶은 가족 (' + famList.length + '가족 · ' + Object.keys(fam.m).length + '명)'),
-        famList.length === 0
-          ? h('p', { style:{ fontSize:'14px', color:'var(--text-3)', padding:'8px 2px', lineHeight:1.6 } },
-              '아직 없습니다. 모두 집주소로 자동 연결되고 있습니다.')
-          : h('div', { style:{ display:'flex', flexDirection:'column', gap:'7px' } },
-              famList.map(f => h('div', {
-                key:f.id,
-                style:{ display:'flex', alignItems:'center', gap:'9px', padding:'10px 12px',
-                        background:'var(--surface-2)', border:'1px solid var(--border)',
-                        borderRadius:'var(--r)' }
-              },
-                h('span', { style:{ flex:1, minWidth:0, fontSize:'15px', fontWeight:700,
-                                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' } },
-                  f.name),
-                h('span', { style:{ fontSize:'13.5px', color:'var(--text-2)', fontWeight:700, flexShrink:0 } },
-                  f.n + '명'),
-                h('button', {
-                  type:'button', className:'act', title:'이름 고치기',
-                  onClick: () => rename(f.id)
-                }, h('i', { className:'ti ti-pencil' })),
-                h('button', {
-                  type:'button', className:'act', title:'식구 손보기',
-                  onClick: () => { setEditFid(x => x === f.id ? '' : f.id); setSrch(''); setMsg(''); setRelEdit(''); }
-                }, h('i', { className:'ti ti-' + (editFid === f.id ? 'chevron-up' : 'users-group') })),
-                h('button', {
-                  type:'button', className:'act', title:'가족 묶음 지우기',
-                  onClick: () => removeFamily(f.id, f.name),
-                  style:{ color:'var(--bad)' }
-                }, h('i', { className:'ti ti-trash' }))
-              ))
-            )
-      ),
-
-      /* ── 식구 손보기 ── */
+      /* ── 식구 손보기 (정식 1.19 — [만들기] 단추 바로 아래로 올림) ──
+         예전에는 가족 목록 아래에 붙어서, 가족이 많으면
+         단추를 누르고도 한참 내려가야 손볼 칸이 나왔다. */
       editFid && h('div', {
-        style:{ marginTop:'14px', paddingTop:'14px', borderTop:'2px solid var(--border-2)' }
+        ref: editRef,
+        style:{ margin:'14px 0 18px', padding:'14px 0 16px',
+                borderTop:'2px solid var(--border-2)',
+                borderBottom:'2px solid var(--border-2)' }
       },
         h(SLabel, { icon:'user-heart', text:'「' + editName + '」 식구 (' + editMembers.length + '명)' }),
 
@@ -11926,6 +11905,45 @@ function FamilyAdmin({ members, family, fieldVis, onFamilyUpdate, onMembersUpdat
           className:'btn btn-ghost btn-sm btn-block', style:{ marginTop:'12px' }
         }, '식구 손보기 닫기')
       )
+,
+
+
+      /* 만들어 둔 가족 목록 */
+      h('div', { style:{ marginTop:'16px' } },
+        h('p', { style:{ fontSize:'13px', fontWeight:800, color:'var(--text-3)', letterSpacing:'.04em', marginBottom:'8px' } },
+          '손으로 묶은 가족 (' + famList.length + '가족 · ' + Object.keys(fam.m).length + '명)'),
+        famList.length === 0
+          ? h('p', { style:{ fontSize:'14px', color:'var(--text-3)', padding:'8px 2px', lineHeight:1.6 } },
+              '아직 없습니다. 모두 집주소로 자동 연결되고 있습니다.')
+          : h('div', { style:{ display:'flex', flexDirection:'column', gap:'7px' } },
+              famList.map(f => h('div', {
+                key:f.id,
+                style:{ display:'flex', alignItems:'center', gap:'9px', padding:'10px 12px',
+                        background:'var(--surface-2)', border:'1px solid var(--border)',
+                        borderRadius:'var(--r)' }
+              },
+                h('span', { style:{ flex:1, minWidth:0, fontSize:'15px', fontWeight:700,
+                                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' } },
+                  f.name),
+                h('span', { style:{ fontSize:'13.5px', color:'var(--text-2)', fontWeight:700, flexShrink:0 } },
+                  f.n + '명'),
+                h('button', {
+                  type:'button', className:'act', title:'이름 고치기',
+                  onClick: () => rename(f.id)
+                }, h('i', { className:'ti ti-pencil' })),
+                h('button', {
+                  type:'button', className:'act', title:'식구 손보기',
+                  onClick: () => { setEditFid(x => x === f.id ? '' : f.id); setSrch(''); setMsg(''); setRelEdit(''); }
+                }, h('i', { className:'ti ti-' + (editFid === f.id ? 'chevron-up' : 'users-group') })),
+                h('button', {
+                  type:'button', className:'act', title:'가족 묶음 지우기',
+                  onClick: () => removeFamily(f.id, f.name),
+                  style:{ color:'var(--bad)' }
+                }, h('i', { className:'ti ti-trash' }))
+              ))
+            )
+      ),
+
     ),
 
     /* 호칭만 따로 적어 둔 분 — 가족 묶음 없이 호칭만 고친 경우 */
