@@ -3533,6 +3533,15 @@ const telHref = p => 'tel:' + String(p || '').replace(/[^0-9+]/g, '');
 const smsHref = p => 'sms:' + String(p || '').replace(/[^0-9+]/g, '');
 const hasPhone = p => String(p || '').replace(/[^0-9]/g, '').length >= 8;
 
+/* dataURL 로 담아 둔 사진을 다시 그림으로 — 요청 사진을 주소록으로 옮길 때 쓴다 */
+function loadImageFromDataUrl(url) {
+  return new Promise((ok, no) => {
+    const img = new Image();
+    img.onload  = () => ok(img);
+    img.onerror = () => no(new Error('사진을 읽지 못했습니다'));
+    img.src = url;
+  });
+}
 const FULL_DIM = 480, FULL_Q = 0.76;
 /* 목록 아바타는 화면에서 50px 동그라미로 보인다.
    64px면 충분하고, 80px 대비 전송량이 약 18% 줄어든다. */
@@ -6490,12 +6499,177 @@ function allCell(arr, key, color, cls) {
     : h('td', { key: key, className: (cls ? cls + ' ' : '') + 'e' }, '\u00b7');
 }
 
+/* ═══ 성도 등록 요청 (정식 1.19) ═══════════════════════════
+   구역 담당자가 새로 오신 분·구원받으신 분을 적어 두면
+   안내실이 그 내용을 다듬어 주소록에 올린다.
+
+   ★ 왜 attend 밑에 두나
+     보안 규칙이 attend/{id} 쓰기를 ★임원 이상★ 에게 열어 두었다
+     (groups·events 만 뺀다). 그래서 규칙을 한 줄도 고치지 않고
+     구역 담당자가 적을 수 있다. 성도는 attend 를 읽지 못하므로
+     아직 등록 전인 분의 정보가 성도 화면으로 새지 않는다.
+   ★ 한 사람에 문서 하나 (req_R…)
+     여러 구역에서 같은 때에 적어도 서로 덮어쓰지 않는다.
+   ★ 사진은 요청 문서 안에 작게 담아 두었다가, 안내실이 주소록에
+     올릴 때 photos·thumbs 로 옮긴다 (사진 쓰기는 안내실만 되므로).
+═══════════════════════════════════════════════════════ */
+const REQ_PREFIX = 'req_';
+const REQ_DIM = 300, REQ_Q = 0.7;          /* 요청에 담는 사진 — 작게 */
+const REQ_REASONS = ['전입', '구원'];
+
+function newReqId() {
+  return 'R' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+function blankReq() {
+  return { id:'', 이름:'', 구역:'미배정', 소속:'', 성별:'', 휴대폰:'', 주소:'',
+           생년월:'', 구원년월:'', 비고:'', 사유:'전입', photo:'', by:'', at:'' };
+}
+async function fbLoadReqs() {
+  const q = _db.collection('attend')
+    .orderBy(firebase.firestore.FieldPath.documentId())
+    .startAt(REQ_PREFIX).endAt(REQ_PREFIX + '');
+  const s = await withTimeout(q.get(), FS_TIMEOUT, '등록 요청 불러오기');
+  const out = [];
+  s.forEach(d => { const v = d.data(); if (v && v.id) out.push(v); });
+  out.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  return out;
+}
+async function fbSaveReq(rec) {
+  await withTimeout(_db.collection('attend').doc(REQ_PREFIX + rec.id).set(rec),
+                    45000, '등록 요청 저장');
+}
+async function fbDeleteReq(id) {
+  await withTimeout(_db.collection('attend').doc(REQ_PREFIX + id).delete(),
+                    FS_TIMEOUT, '등록 요청 지우기');
+}
+/* 요청 한 건 → 주소록에 넣을 성도 한 줄 */
+function reqToMember(r) {
+  return {
+    '고유ID': r.id, '이름': String(r.이름 || '').trim(), '구역': String(r.구역 || '').trim(),
+    '소속': r.소속 || '', '성별': r.성별 || '', '휴대폰': r.휴대폰 || '',
+    '주소': r.주소 || '', '생년월': r.생년월 || '', '구원년월': r.구원년월 || '',
+    '비고': r.비고 || '',
+    /* 새로 오신 분은 그 표식을 그대로 달아 드린다 (출석상태 칸) */
+    '출석상태': r.사유 === '구원' ? '출석A 구원' : '출석A 전입'
+  };
+}
+
+/* ── 요청 적는 칸 — 구역 담당자와 안내실이 같은 폼을 쓴다 ── */
+function ReqForm({ rec, set, guPick, guCodes, soList, busy }) {
+  const row = (label, node, hint) => h('div', { key:label, style:{ marginBottom:'11px' } },
+    h('label', { style:{ display:'block', fontSize:'13px', fontWeight:800,
+                         color:'var(--text-2)', marginBottom:'5px' } }, label,
+      hint ? h('span', { style:{ fontWeight:600, color:'var(--text-3)' } }, '  ' + hint) : null),
+    node);
+  const put = (k, v) => set({ ...rec, [k]: v });
+  const inp = (k, extra) => h('input', Object.assign({
+    type:'text', value: rec[k] || '', disabled: busy,
+    onChange: e => put(k, e.target.value)
+  }, extra || {}));
+
+  async function onPhoto(e) {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      const img = await loadImageFromFile(file);
+      put('photo', toDataUrl(img, REQ_DIM, REQ_Q));
+    } catch (err) { alert('사진을 읽지 못했습니다: ' + err.message); }
+    e.target.value = '';
+  }
+
+  return h('div', null,
+    /* 사진 */
+    h('div', { style:{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'14px' } },
+      h('div', {
+        style:{ width:'72px', height:'72px', borderRadius:'50%', flexShrink:0,
+                border:'2px solid var(--border-2)', overflow:'hidden',
+                background:'var(--surface-2)', display:'flex',
+                alignItems:'center', justifyContent:'center' }
+      }, rec.photo
+          ? h('img', { src:rec.photo, alt:'', style:{ width:'100%', height:'100%', objectFit:'cover' } })
+          : h('i', { className:'ti ti-user', style:{ fontSize:'30px', color:'var(--text-3)' } })),
+      h('div', { style:{ flex:1, minWidth:0 } },
+        h('label', { className:'btn btn-ghost btn-sm', style:{ display:'inline-flex', cursor:'pointer' } },
+          h('i', { className:'ti ti-camera', style:{ fontSize:'18px' } }),
+          rec.photo ? '사진 바꾸기' : '사진 넣기',
+          h('input', { type:'file', accept:'image/*', disabled:busy,
+                       style:{ display:'none' }, onChange:onPhoto })),
+        rec.photo && h('button', {
+          type:'button', className:'btn btn-ghost btn-sm', disabled:busy,
+          style:{ marginLeft:'6px' }, onClick: () => put('photo', '')
+        }, '지우기'))),
+
+    row('이름', inp('이름', { placeholder:'예: 김성도' })),
+    row('구역',
+      guPick
+        ? h('select', { value: rec.구역 || '미배정', disabled:busy,
+                        onChange: e => put('구역', e.target.value) },
+            h('option', { value:'미배정' }, '미배정 (아직 안 정함)'),
+            (guCodes || []).map(g => h('option', { key:g, value:g }, g + '구역')))
+        : h('input', { type:'text', value:'미배정', disabled:true }),
+      guPick ? '' : '구역은 안내실이 정합니다'),
+    row('소속',
+      h('select', { value: rec.소속 || '', disabled:busy,
+                    onChange: e => put('소속', e.target.value) },
+        h('option', { value:'' }, '(고르지 않음)'),
+        (soList || []).map(s => h('option', { key:s, value:s }, s)))),
+    row('성별',
+      h('div', { style:{ display:'flex', gap:'7px' } },
+        ['남', '여'].map(g => h('button', {
+          key:g, type:'button', disabled:busy,
+          className: 'btn btn-sm ' + (rec.성별 === g ? 'btn-primary' : 'btn-ghost'),
+          style:{ flex:1 }, onClick: () => put('성별', rec.성별 === g ? '' : g)
+        }, g)))),
+    row('휴대폰', inp('휴대폰', { type:'tel', placeholder:'010-0000-0000' })),
+    row('주소', h('textarea', { rows:2, value: rec.주소 || '', disabled:busy,
+                               placeholder:'도로명 주소',
+                               onChange: e => put('주소', e.target.value) })),
+    row('생년월', inp('생년월', { placeholder:'1970.05', inputMode:'numeric' }), '연.월'),
+    row('구원년월', inp('구원년월', { placeholder:'2026.09', inputMode:'numeric' }), '연.월'),
+    row('사유',
+      h('div', { style:{ display:'flex', gap:'7px' } },
+        REQ_REASONS.map(g => h('button', {
+          key:g, type:'button', disabled:busy,
+          className: 'btn btn-sm ' + (rec.사유 === g ? 'btn-primary' : 'btn-ghost'),
+          style:{ flex:1 }, onClick: () => put('사유', g)
+        }, g)))),
+    row('비고', h('textarea', { rows:2, value: rec.비고 || '', disabled:busy,
+                               placeholder:'전입·구원에 관한 짧은 설명',
+                               onChange: e => put('비고', e.target.value) }))
+  );
+}
+
+/* 요청 한 건을 줄로 보여 준다 */
+function ReqRow({ r, right }) {
+  return h('div', {
+    style:{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 2px',
+            borderTop:'1px solid var(--border)' }
+  },
+    h('div', {
+      style:{ width:'38px', height:'38px', borderRadius:'50%', flexShrink:0,
+              overflow:'hidden', background:'var(--surface-2)', display:'flex',
+              alignItems:'center', justifyContent:'center' }
+    }, r.photo
+        ? h('img', { src:r.photo, alt:'', style:{ width:'100%', height:'100%', objectFit:'cover' } })
+        : h('i', { className:'ti ti-user', style:{ fontSize:'19px', color:'var(--text-3)' } })),
+    h('div', { style:{ flex:1, minWidth:0 } },
+      h('div', { style:{ fontSize:'15px', fontWeight:800 } }, r.이름 || '(이름 없음)',
+        h('span', {
+          style:{ marginLeft:'6px', fontSize:'11.5px', fontWeight:800, padding:'2px 7px',
+                  borderRadius:'999px', background:'var(--soft)', color:'var(--navy)' }
+        }, r.사유 || '전입')),
+      h('div', { style:{ fontSize:'12px', color:'var(--text-3)', marginTop:'2px' } },
+        (r.구역 && r.구역 !== '미배정' ? r.구역 + '구역 · ' : '미배정 · ') +
+        (r.by ? r.by + '구역에서 보냄' : '보낸 이 모름') +
+        (r.at ? ' · ' + String(r.at).slice(0, 10) : ''))),
+    right);
+}
+
 /* ═══════════════════════════════════════════════════════
    성도 목록 (이름 전용 초성 검색)
 ═══════════════════════════════════════════════════════ */
 function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle, role, fieldVis,
                     onAdminPanel, onAttend, attStatus, listCfg, view, setView, scrollRef, onHome,
-                    family }) {
+                    family, reqs }) {
   /* 검색·필터·스크롤 위치는 App이 들고 있다.
      성도 한 명을 보고 목록으로 돌아와도 보던 자리 그대로 이어진다. */
   const search = view.search, fGu = view.fGu, fSo = view.fSo, fAtt = view.fAtt;
@@ -6520,9 +6694,28 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
   const seePhone = canSee('휴대폰',  role, fieldVis) || canSee('집전화', role, fieldVis);
   const seeArea  = canSee('지역',    role, fieldVis);
 
-  const uGu = useMemo(() =>
-    [...new Set(members.map(m => m['구역']).filter(Boolean))]
-      .sort((a,b) => (parseInt(a,10)||999) - (parseInt(b,10)||999)), [members]);
+  /* ═══ 성도 등록 요청 → 목록에 보일 줄 (정식 1.19) ═══
+     구역 담당자가 관리화면 [성도 등록 요청] 에 적어 둔 분들이다.
+     아직 주소록에 없는 분이라 members 와 섞지 않고 따로 들고 있다가
+     구역 칸에서 「미배정」 을 고르셨을 때만 이 줄들을 보여 드린다. */
+  const reqRows = useMemo(() => (reqs || []).map(r => ({
+    ...reqToMember(r),
+    __req: true, __reqBy: r.by || '', __reqAt: r.at || '', __reqWhy: r.사유 || ''
+  })), [reqs]);
+  const reqPhotos = useMemo(() => {
+    const o = {};
+    (reqs || []).forEach(r => { if (r.photo) o[r.id] = r.photo; });
+    return o;
+  }, [reqs]);
+  /* 요청이 한 건이라도 있을 때만 구역 칸에 「미배정」 을 올린다 */
+  const seeReq = isLeader && reqRows.length > 0;
+  const onReq  = seeReq && fGu === '미배정';
+
+  const uGu = useMemo(() => {
+    const gs = [...new Set(members.map(m => m['구역']).filter(Boolean))]
+      .sort((a,b) => (parseInt(a,10)||999) - (parseInt(b,10)||999));
+    return seeReq ? gs.concat(['미배정']) : gs;
+  }, [members, seeReq]);
 
   /* ═══ 직분 고르기 (정식 1.18 — 엑셀 「직분 카테고리」 칸을 그대로 씀) ═══
      명단의 「직분 카테고리」 칸을 '/' 로 쪼개 ★겹치지 않는 낱개★ 를 모아
@@ -6559,7 +6752,9 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
   const famSort = useMemo(() => sortByFamily(famIdx), [famIdx]);
 
   /* ⚡ [이름 전용 초성 검색 필터] */
-  const filtered = useMemo(() => members.filter(m => {
+  /* 「미배정」 을 고르셨으면 주소록 대신 등록 요청 줄을 건다 */
+  const listBase = onReq ? reqRows : members;
+  const filtered = useMemo(() => listBase.filter(m => {
     if (search) {
       const s = search.toLowerCase().replace(/\s/g,'');
       
@@ -6592,7 +6787,7 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
       else if (isAttExempt(m) || f.state !== fAtt) return false;   /* 영유아는 상태로 걸리지 않는다 */
     }
     return true;
-  }).sort(famSort), [members, search, fGu, fSo, fAtt, fCat, attStatus, listCfg, seeAtt, famSort]);
+  }).sort(famSort), [listBase, search, fGu, fSo, fAtt, fCat, attStatus, listCfg, seeAtt, famSort]);
 
   /* 목록에서 빠진 인원 수 — 임원 이상에게만 알려 준다.
      설정을 켜 둔 것을 잊고 '왜 인원이 줄었지?' 하지 않도록. */
@@ -6797,7 +6992,8 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
       h('div', { style:{ display:'flex', gap:'8px', marginTop:'10px' } },
         seeGu && h('select', { value:fGu, onChange: e => setFGu(e.target.value), style:{ flex:1, minWidth:0 } },
           h('option', { value:'' }, '전체 구역'),
-          uGu.map(g => h('option', { key:g, value:g }, g + '구역'))
+          uGu.map(g => h('option', { key:g, value:g },
+            g === '미배정' ? '미배정 (등록 요청 ' + reqRows.length + '명)' : g + '구역'))
         ),
         seeSo && h('select', { value:fSo, onChange: e => setFSo(e.target.value), style:{ flex:1.2, minWidth:0 } },
           h('option', { value:'' }, '전체 소속'),
@@ -6860,6 +7056,13 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
         }, h('i', { className:'ti ti-rotate-2', style:{ fontSize:'13px', marginRight:'3px' } }), '초기화')
       ),
 
+      /* 「미배정」 을 보고 계실 때의 안내 — 여기서 고치는 곳이 아니라고 알려 드린다 */
+      onReq && h('p', { className:'note note-info', style:{ margin:'4px 0 2px' } },
+        h('i', { className:'ti ti-user-plus',
+                 style:{ fontSize:'16px', verticalAlign:'-3px', marginRight:'5px' } }),
+        '구역에서 올라온 ', h('b', null, '성도 등록 요청'), ' 입니다. ',
+        h('b', null, '안내실 관리화면 → [성도 등록]'), ' 에서 내용을 고치고 주소록에 올립니다.'),
+
       h('div', { className:'pb-safe', style:{ marginTop:'4px' } },
         filtered.length === 0
           ? h('div', {
@@ -6871,7 +7074,9 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
           : groups.map(([gu, list]) => h(React.Fragment, { key:gu },
               seeGu && h('div', { className:'ghead' },
                 h('span', { className:'ghead-dot' }),
-                h('span', { className:'ghead-t' }, gu === '미지정' ? '구역 미지정' : gu + '구역'),
+                h('span', { className:'ghead-t' },
+                  gu === '미배정' ? '구역 미배정 — 등록 요청'
+                  : gu === '미지정' ? '구역 미지정' : gu + '구역'),
                 h('span', { className:'ghead-c' }, list.length + '명'),
                 h('span', { className:'ghead-line' })
               ),
@@ -6900,10 +7105,12 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                   const card = h('div', {
                     key: m['고유ID'],
                     className:'mcard',
-                    style:{ '--stripe': av.bg },
-                    onClick: () => onSelect(m)
+                    style:{ '--stripe': av.bg, cursor: m.__req ? 'default' : '' },
+                    /* 등록 요청 줄은 눌러도 상세로 가지 않는다 —
+                       아직 주소록에 없는 분이라 고칠 곳이 [성도 등록] 화면이다 */
+                    onClick: m.__req ? null : () => onSelect(m)
                   },
-                    h(Avatar, { member:m, photos, size:50 }),
+                    h(Avatar, { member:m, photos: m.__req ? reqPhotos : photos, size:50 }),
                     h('div', { style:{ flex:1, minWidth:0 } },
                       h('div', { style:{ display:'flex', alignItems:'center', gap:'7px', flexWrap:'wrap', marginBottom:'3px' } },
                         h('span', { className:'mname' },
@@ -6924,6 +7131,8 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                           className:'mrole-n', title: jikList.join(' / ')
                         }, '+' + (jikList.length - 2)),
                         seeSo && h(Bdg, { t:m['소속'], bg:av.bg, cl:av.cl }),
+                        m.__req && h(Bdg, { t:'등록요청', bg:'var(--soft)', cl:'var(--navy)',
+                                            icon:'user-plus' }),
                         seeAtt && !isAttExempt(m) && att !== '출석A' && h(Bdg, { t:att, bg:badge.bg, cl:badge.cl }),
                         seeAtt && marks.map(k => {
                           const t = getMarkBadge(k, dark);
@@ -6936,7 +7145,12 @@ function MainView({ members, photos, logoUrl, onLogout, onSelect, theme, toggle,
                       ),
                       h('div', { className:'msub' },
                         phone && h('span', null, phone),
-                        seeArea && m['지역'] && h('span', { style:{ color:'var(--text-3)' } }, '· ' + m['지역'])
+                        seeArea && m['지역'] && h('span', { style:{ color:'var(--text-3)' } }, '· ' + m['지역']),
+                        /* 요청 줄에는 누가 언제 보냈는지를 적어 둔다 */
+                        m.__req && h('span', { style:{ color:'var(--text-3)' } },
+                          (phone ? '· ' : '') +
+                          (m.__reqBy ? m.__reqBy + '구역에서 보냄' : '보낸 구역 모름') +
+                          (m.__reqAt ? ' · ' + String(m.__reqAt).slice(0, 10) : ''))
                       )
                     ),
                     h(CallActions, { phone })
@@ -9128,6 +9342,251 @@ function makeStoreZip(files) {
   end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
   end.setUint32(12, dirSize, true); end.setUint32(16, off, true);
   return new Blob(body.concat(dir, [new Uint8Array(end.buffer)]), { type:'application/zip' });
+}
+
+/* ═══ [성도 등록 요청] — 구역 담당자 화면 (정식 1.19) ═══════
+   새로 오신 분을 적어 보내면 안내실이 주소록에 올린다.
+   구역은 「미배정」으로 굳어 있다 — 어느 구역으로 넣을지는
+   안내실이 정하는 것이 교회 관례이기 때문이다. */
+function RegRequest({ me, members, dark }) {
+  const [rec,  setRec]  = useState(blankReq);
+  const [list, setList] = useState(null);      /* null = 불러오는 중 */
+  const [busy, setBusy] = useState(false);
+  const [msg,  setMsg]  = useState('');
+  const [open, setOpen] = useState(false);     /* 적는 칸을 펴 두었나 */
+
+  const soList = useMemo(() => {
+    const s = [...new Set(members.map(m => String(m['소속'] || '').trim()).filter(Boolean))];
+    return s.sort((a, b) => {
+      const ia = SO_ORDER.indexOf(a), ib = SO_ORDER.indexOf(b);
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib) || a.localeCompare(b, 'ko');
+    });
+  }, [members]);
+
+  const reload = useCallback(() => {
+    fbLoadReqs().then(setList).catch(e => { setList([]); setMsg('bad:' + fsErrMsg(e)); });
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  async function send() {
+    const nm = String(rec.이름 || '').trim();
+    if (!nm) { setMsg('bad:이름을 적어 주세요.'); return; }
+    setBusy(true); setMsg('');
+    try {
+      const one = { ...rec, 이름:nm, 구역:'미배정',
+                    id: rec.id || newReqId(),
+                    by: rec.by || me,
+                    at: rec.at || new Date().toISOString() };
+      await fbSaveReq(one);
+      setRec(blankReq()); setOpen(false);
+      setMsg('ok:' + nm + ' 님 등록 요청을 보냈습니다. 안내실이 확인한 뒤 주소록에 올립니다.');
+      reload();
+    } catch (e) { setMsg('bad:' + fsErrMsg(e)); }
+    setBusy(false);
+  }
+  async function remove(r) {
+    if (!confirm((r.이름 || '') + ' 님 등록 요청을 지울까요?')) return;
+    setBusy(true); setMsg('');
+    try { await fbDeleteReq(r.id); setMsg('ok:지웠습니다.'); reload(); }
+    catch (e) { setMsg('bad:' + fsErrMsg(e)); }
+    setBusy(false);
+  }
+
+  const mine = (list || []).filter(r => String(r.by || '') === String(me));
+  const other = (list || []).filter(r => String(r.by || '') !== String(me));
+
+  return h(React.Fragment, null,
+    h(Card, null,
+      h(SLabel, { icon:'user-plus', text:'새로 오신 분 등록 요청' }),
+      h('p', { style:{ fontSize:'13px', color:'var(--text-3)', lineHeight:1.7, marginBottom:'10px' } },
+        '전입하신 분이나 구원받으신 분을 적어 보내시면 ', h('b', null, '안내실'),
+        ' 이 확인한 뒤 주소록에 올립니다. 올라가기 전까지는 ',
+        h('b', null, '「미배정」'), ' 으로 목록에 보입니다. ',
+        '아는 것만 적으셔도 됩니다 — ', h('b', null, '이름'), ' 과 ',
+        h('b', null, '사유'), ' 만 있으면 보낼 수 있습니다.'),
+      open
+        ? h(React.Fragment, null,
+            h(ReqForm, { rec, set:setRec, guPick:false, soList, busy }),
+            h('div', { style:{ display:'flex', gap:'8px', marginTop:'6px' } },
+              h('button', { type:'button', className:'btn btn-primary', style:{ flex:1 },
+                            disabled:busy, onClick:send },
+                busy ? '보내는 중...' : (rec.id ? '고친 내용 보내기' : '요청 보내기')),
+              h('button', { type:'button', className:'btn btn-ghost', disabled:busy,
+                            onClick: () => { setRec(blankReq()); setOpen(false); setMsg(''); } }, '그만두기')))
+        : h('button', { type:'button', className:'btn btn-primary btn-block',
+                        onClick: () => { setRec(blankReq()); setOpen(true); setMsg(''); } },
+            h('i', { className:'ti ti-plus', style:{ fontSize:'19px' } }), '새 등록 요청 적기'),
+      msg ? h('p', { className:'note ' + (msg.indexOf('ok:') === 0 ? 'note-ok' : 'note-bad'),
+                     style:{ marginTop:'10px' } }, msg.slice(msg.indexOf(':') + 1)) : null
+    ),
+
+    h(Card, null,
+      h(SLabel, { icon:'clock', text:'보낸 요청 ' + (list ? mine.length + '건' : '') }),
+      list === null
+        ? h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', padding:'10px 0' } }, '불러오는 중...')
+        : mine.length === 0
+          ? h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', padding:'10px 0' } },
+              '아직 보낸 요청이 없습니다.')
+          : mine.map(r => h(ReqRow, { key:r.id, r,
+              right: h('div', { style:{ display:'flex', gap:'6px', flexShrink:0 } },
+                h('button', { type:'button', className:'btn btn-ghost btn-sm', disabled:busy,
+                              onClick: () => { setRec({ ...blankReq(), ...r }); setOpen(true); setMsg(''); } }, '고치기'),
+                h('button', { type:'button', className:'btn btn-ghost btn-sm', disabled:busy,
+                              onClick: () => remove(r) }, '지우기')) })),
+      other.length > 0 && h('p', {
+        style:{ fontSize:'12.5px', color:'var(--text-3)', marginTop:'10px', lineHeight:1.6 }
+      }, '다른 구역에서 보낸 요청이 ', h('b', null, other.length + '건'),
+         ' 더 있습니다. 목록 화면에서 구역을 ', h('b', null, '「미배정」'), ' 으로 고르시면 함께 보입니다.')
+    )
+  );
+}
+
+/* ═══ [성도 등록] — 안내실·전도인 화면 (정식 1.19) ══════════
+   구역에서 올라온 요청을 확인해 내용을 다듬고,
+   ★안내실★ 이 구역을 정해 주소록에 올린다.
+   전도인은 검토·수정까지만 한다 — 명단·사진 쓰기는 보안 규칙이
+   안내실에게만 열려 있기 때문이다 (규칙을 고치지 않았다). */
+function RegDesk({ members, photos, fieldVis, family, dark, canRegister, onMembersUpdate, onPhotoUpdate }) {
+  const [list, setList] = useState(null);
+  const [rec,  setRec]  = useState(null);      /* null = 고른 것 없음 */
+  const [isNew, setIsNew] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg,  setMsg]  = useState('');
+
+  const soList = useMemo(() => {
+    const s = [...new Set(members.map(m => String(m['소속'] || '').trim()).filter(Boolean))];
+    return s.sort((a, b) => {
+      const ia = SO_ORDER.indexOf(a), ib = SO_ORDER.indexOf(b);
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib) || a.localeCompare(b, 'ko');
+    });
+  }, [members]);
+  const guCodes = useMemo(() => {
+    const s = [...new Set(members.map(m => String(m['구역'] || '').trim()).filter(Boolean))];
+    (GU_CODES_FIXED || []).forEach(g => { if (s.indexOf(g) < 0) s.push(g); });
+    return s.sort((a, b) => (parseInt(a, 10) || 999) - (parseInt(b, 10) || 999));
+  }, [members]);
+
+  const reload = useCallback(() => {
+    fbLoadReqs().then(setList).catch(e => { setList([]); setMsg('bad:' + fsErrMsg(e)); });
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  async function saveReq() {
+    const nm = String(rec.이름 || '').trim();
+    if (!nm) { setMsg('bad:이름을 적어 주세요.'); return; }
+    setBusy(true); setMsg('');
+    try {
+      await fbSaveReq({ ...rec, 이름:nm, id: rec.id || newReqId(),
+                        at: rec.at || new Date().toISOString() });
+      setMsg('ok:요청 내용을 고쳐 두었습니다.'); setRec(null); reload();
+    } catch (e) { setMsg('bad:' + fsErrMsg(e)); }
+    setBusy(false);
+  }
+
+  /* ★ 주소록에 올리기 — 안내실만
+       ① 온전한 명단을 읽어 한 줄 더한 뒤 네 벌을 다시 만든다
+          (엑셀을 올릴 때와 같은 길이라 보안 규칙을 고칠 필요가 없다)
+       ② 사진이 있으면 photos·thumbs 로 옮긴다
+       ③ 요청 문서는 지운다 — 이제 주소록에 있으므로 */
+  async function register() {
+    const nm = String(rec.이름 || '').trim();
+    if (!nm) { setMsg('bad:이름을 적어 주세요.'); return; }
+    const gu = String(rec.구역 || '').trim();
+    if (!gu || gu === '미배정') { setMsg('bad:구역을 정해 주세요.'); return; }
+    setBusy(true); setMsg('');
+    try {
+      const master = await fbLoadMasterMembers();
+      if (!master.length) throw new Error('온전한 명단을 읽지 못했습니다.');
+      const id = rec.id || newReqId();
+      const one = reqToMember({ ...rec, id, 이름:nm, 구역:gu });
+      const dup = master.some(x => String(x['고유ID']) === String(id));
+      const next = dup
+        ? master.map(x => (String(x['고유ID']) === String(id) ? { ...x, ...one } : x))
+        : master.concat([one]);
+      await fbSaveMembers(next, fieldVis, family);
+
+      if (rec.photo) {
+        try {
+          const img = await loadImageFromDataUrl(rec.photo);
+          const fullU = toDataUrlCapped(img, FULL_DIM, FULL_Q, 850000);
+          const thumb = toDataUrl(img, THUMB_DIM, THUMB_Q);
+          await fbSavePhotoDoc(id, fullU);
+          await fbSaveThumbs({ ...(photos || {}), [id]: thumb });
+          onPhotoUpdate && onPhotoUpdate(id, thumb);
+        } catch (pe) { /* 사진만 실패해도 등록은 살린다 */ }
+      }
+      if (rec.id) { try { await fbDeleteReq(rec.id); } catch (de) {} }
+
+      onMembersUpdate && onMembersUpdate(next);
+      setRec(null); setIsNew(false);
+      setMsg('ok:' + nm + ' 님을 ' + gu + '구역으로 주소록에 올렸습니다.');
+      reload();
+    } catch (e) { setMsg('bad:' + fsErrMsg(e)); }
+    setBusy(false);
+  }
+
+  async function remove(r) {
+    if (!confirm((r.이름 || '') + ' 님 등록 요청을 지울까요?')) return;
+    setBusy(true); setMsg('');
+    try { await fbDeleteReq(r.id); setMsg('ok:지웠습니다.'); setRec(null); reload(); }
+    catch (e) { setMsg('bad:' + fsErrMsg(e)); }
+    setBusy(false);
+  }
+
+  const noteBox = msg ? h('p', {
+    className:'note ' + (msg.indexOf('ok:') === 0 ? 'note-ok' : 'note-bad'),
+    style:{ marginTop:'10px' }
+  }, msg.slice(msg.indexOf(':') + 1)) : null;
+
+  return h(React.Fragment, null,
+    rec
+      ? h(Card, null,
+          h(SLabel, { icon:'user-edit', text: isNew ? '새 성도 직접 입력' : '요청 내용 다듬기' }),
+          !canRegister && h('div', { className:'note note-info', style:{ marginBottom:'10px' } },
+            h('b', null, '주소록에 올리는 것은 안내실이 합니다.'), h('br'),
+            h('span', { style:{ fontSize:'13px', opacity:.9 } },
+              '여기서 고쳐 두시면 안내실이 그대로 올립니다.')),
+          h(ReqForm, { rec, set:setRec, guPick:canRegister, guCodes, soList, busy }),
+          h('div', { style:{ display:'flex', gap:'8px', marginTop:'6px', flexWrap:'wrap' } },
+            canRegister && h('button', { type:'button', className:'btn btn-primary',
+                                         style:{ flex:'1 1 150px' }, disabled:busy, onClick:register },
+              busy ? '올리는 중...' : '주소록에 등록'),
+            !isNew && h('button', { type:'button', className:'btn btn-ghost',
+                                    style:{ flex:'1 1 110px' }, disabled:busy, onClick:saveReq },
+              '요청만 고쳐 두기'),
+            h('button', { type:'button', className:'btn btn-ghost', disabled:busy,
+                          onClick: () => { setRec(null); setIsNew(false); setMsg(''); } }, '그만두기')),
+          noteBox)
+      : h(Card, null,
+          h(SLabel, { icon:'user-plus', text:'성도 등록' }),
+          h('p', { style:{ fontSize:'13px', color:'var(--text-3)', lineHeight:1.7, marginBottom:'10px' } },
+            '구역에서 올라온 ', h('b', null, '등록 요청'), ' 을 고르면 내용을 다듬을 수 있습니다. ',
+            canRegister
+              ? h(React.Fragment, null, '구역을 정해 ', h('b', null, '[주소록에 등록]'),
+                  ' 을 누르면 명단에 올라가고 요청은 사라집니다.')
+              : '주소록에 올리는 것은 안내실이 합니다.'),
+          canRegister && h('button', {
+            type:'button', className:'btn btn-primary btn-block', disabled:busy,
+            onClick: () => { setRec({ ...blankReq(), id:newReqId(), 구역:'' }); setIsNew(true); setMsg(''); }
+          }, h('i', { className:'ti ti-plus', style:{ fontSize:'19px' } }), '새 성도 직접 입력'),
+          noteBox),
+
+    h(Card, null,
+      h(SLabel, { icon:'inbox', text:'등록 요청 ' + (list ? list.length + '건' : '') }),
+      list === null
+        ? h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', padding:'10px 0' } }, '불러오는 중...')
+        : list.length === 0
+          ? h('p', { style:{ fontSize:'13.5px', color:'var(--text-3)', padding:'10px 0' } },
+              '올라온 요청이 없습니다.')
+          : list.map(r => h(ReqRow, { key:r.id, r,
+              right: h('div', { style:{ display:'flex', gap:'6px', flexShrink:0 } },
+                h('button', { type:'button', className:'btn btn-ghost btn-sm', disabled:busy,
+                              onClick: () => { setRec({ ...blankReq(), ...r }); setIsNew(false); setMsg(''); } },
+                  canRegister ? '열기' : '보기'),
+                h('button', { type:'button', className:'btn btn-ghost btn-sm', disabled:busy,
+                              onClick: () => remove(r) }, '지우기')) }))
+    )
+  );
 }
 
 function PhotoManager({ members, photos, onPhotoUpdate, onPhotosReset, dark }) {
@@ -11721,16 +12180,20 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
   const tabs = isLead
     ? [
         ['myatt','출석','clipboard-check'],
+        /* 구역 담당자가 새로 오신 분을 적어 보내는 자리 (정식 1.19) */
+        ['newreq','성도 등록 요청','user-plus'],
         ['pwd','비밀번호','lock']
       ]
     : isEvang
     ? [
         ['attend','출석','clipboard-check'],
+        ['newreg','성도 등록','user-plus'],
         ['visit','심방 메모','notes'],
         ['pwd','비밀번호','lock']
       ]
     : [
         ['upload','데이터','database-import'],
+        ['newreg','성도 등록','user-plus'],
         ['photos','사진','photo'],
         ['vis','표시 설정','eye-cog'],
         ['family','가족','users'],
@@ -11874,6 +12337,14 @@ function AdminView({ members, photos, fieldVis, logoUrl, visitCfg, listCfg, attS
             ' — 사진과 심방 메모가 이 값으로 성도를 찾습니다')
         )
       ),
+
+      tab === 'newreq' && h(RegRequest, { me: (myScope() && myScope().code) || '', members, dark }),
+
+      tab === 'newreg' && h(RegDesk, {
+        members, photos, fieldVis, family, dark,
+        canRegister: !isEvang && !isLead,       /* 주소록 쓰기는 안내실만 (보안 규칙) */
+        onMembersUpdate, onPhotoUpdate
+      }),
 
       tab === 'photos' && h(PhotoManager, { members, photos, onPhotoUpdate, onPhotosReset, dark }),
 
@@ -13770,6 +14241,22 @@ function AppReady({ wizard, setWizard }) {
     });
   }, []);
 
+  /* 구역에서 올라온 「성도 등록 요청」 (정식 1.19)
+     ★ 임원 등급(구역·부서 담당자·안내실·전도인)부터만 읽는다.
+       성도 화면은 이 자료를 아예 부르지 않아 새 분이 비치지 않는다.
+     ★ 주소록(members)과 섞지 않는다. 목록의 구역 칸에서 「미배정」 을
+       고르셨을 때만 이분들을 대신 보여 드린다 — 인원수·출석표는 그대로다.
+     ★ 관리 화면에 다녀오실 때마다 다시 받는다. 안내실이 주소록에 올린
+       분이 목록에 그대로 남아 있으면 두 번 올리시기 때문이다. */
+  const [reqs, setReqs] = useState([]);
+  useEffect(() => {
+    if (ROLES[role || 'member'] < ROLES.leader) { setReqs([]); return; }
+    if (phase !== 'main' && phase !== 'admin') return;
+    let live = true;
+    fbLoadReqs().then(r => { if (live) setReqs(r || []); }).catch(e => {});
+    return () => { live = false; };
+  }, [role, phase]);
+
   /* 진행 상황 통로를 꽂아 둔다 (불러오기 화면이 무엇을 받는지 보여 준다) */
   const [step, setStep] = useState('auth');
   /* 방금 로그인한 등급 — [다시 받기] 가 비밀번호 없이 이어가는 데 쓴다 */
@@ -14148,7 +14635,7 @@ function AppReady({ wizard, setWizard }) {
   });
 
   return h(MainView, {
-    ...tp, members, photos, logoUrl, role, fieldVis, attStatus, listCfg, family,
+    ...tp, members, photos, logoUrl, role, fieldVis, attStatus, listCfg, family, reqs,
     view, setView, scrollRef: listScroll,
     onLogout:     logout,
     onSelect:     goDetail,
