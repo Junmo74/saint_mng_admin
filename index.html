@@ -313,7 +313,11 @@ a{color:inherit}
 /* ── 전체집계2 — 가로·세로를 바꾼 표 ── */
 .alltab.tx{min-width:1000px}
 .alltab.tx thead th{top:0;height:auto}
-.alltab.tx tbody th{white-space:nowrap;min-width:74px}
+/* 항목 칸은 ★글자에 딱 붙는 너비★ 로 (정식 1.18)
+   width:1% 는 표에서 「내용만큼만 차지하라」 는 뜻이다.
+   nowrap 이라 「출석A 봉」 이 잘리지 않으면서 군더더기 여백은 없앤다. */
+.alltab.tx tbody th,.alltab.tx thead th.gu{white-space:nowrap;width:1%;min-width:0;
+  padding-left:6px;padding-right:6px}
 /* 항목 덩어리가 끝나는 줄 아래에 「가정 구분선」 색 선 */
 .alltab.tx tbody tr.gsep th,.alltab.tx tbody tr.gsep td{border-bottom:2px solid var(--line)}
 /* 구역 칸을 하나 건너 하나씩 연하게 (세로로 짚어 읽기 쉽게) */
